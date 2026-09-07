@@ -318,8 +318,16 @@ namespace ProjectTools.AnimationPreview
             clip.SampleAnimation(previewInstance, 0f);
             leftFootPositions[0] = CaptureFootPosition(leftFoot, calibration.LeftFootSoleOffset);
             rightFootPositions[0] = CaptureFootPosition(rightFoot, calibration.RightFootSoleOffset);
-            Vector3 previousRootPosition = animator.transform.position;
-            Quaternion previousRootRotation = animator.transform.rotation;
+            AnimationCurve rootPositionX = null;
+            AnimationCurve rootPositionY = null;
+            AnimationCurve rootPositionZ = null;
+            AnimationCurve rootRotationX = null;
+            AnimationCurve rootRotationY = null;
+            AnimationCurve rootRotationZ = null;
+            AnimationCurve rootRotationW = null;
+            bool useHumanoidRootMotionCurves = clip.humanMotion && TryGetHumanoidRootMotionCurves(clip, out rootPositionX, out rootPositionY, out rootPositionZ, out rootRotationX, out rootRotationY, out rootRotationZ, out rootRotationW);
+            Vector3 previousRootPosition = useHumanoidRootMotionCurves ? EvaluateRootPosition(rootPositionX, rootPositionY, rootPositionZ, 0f) : animator.transform.position;
+            Quaternion previousRootRotation = useHumanoidRootMotionCurves ? EvaluateRootRotation(rootRotationX, rootRotationY, rootRotationZ, rootRotationW, 0f) : animator.transform.rotation;
             //变化量置0
             Vector3 accumulatedPosition = Vector3.zero;
             float accumulatedYaw = 0f;
@@ -330,10 +338,12 @@ namespace ProjectTools.AnimationPreview
                 //每一份动画长度除以采样点从而平均铺满整个动画
                 double sampleTime = clip.length * i / (count - 1);
                 clip.SampleAnimation(previewInstance, (float)sampleTime);
-                Vector3 frameDeltaPosition = animator.transform.position - previousRootPosition;
-                Quaternion frameDeltaRotation = Quaternion.Inverse(previousRootRotation) * animator.transform.rotation;
-                //烘焙不依赖模型朝向，用于撤销模型的初始旋转
-                Vector3 localDelta = Quaternion.Inverse(modelRotation) * frameDeltaPosition;
+                Vector3 currentRootPosition = useHumanoidRootMotionCurves ? EvaluateRootPosition(rootPositionX, rootPositionY, rootPositionZ, (float)sampleTime) : animator.transform.position;
+                Quaternion currentRootRotation = useHumanoidRootMotionCurves ? EvaluateRootRotation(rootRotationX, rootRotationY, rootRotationZ, rootRotationW, (float)sampleTime) : animator.transform.rotation;
+                Vector3 frameDeltaPosition = currentRootPosition - previousRootPosition;
+                Quaternion frameDeltaRotation = Quaternion.Inverse(previousRootRotation) * currentRootRotation;
+                //RootT 曲线已经是动画本地空间；只有回退到模型采样时才撤销模型初始旋转
+                Vector3 localDelta = useHumanoidRootMotionCurves ? frameDeltaPosition : Quaternion.Inverse(modelRotation) * frameDeltaPosition;
                 //去除y轴分量影响投影到xz平面上
                 accumulatedPosition += Vector3.ProjectOnPlane(localDelta, Vector3.up);
                 //四元数转为欧拉角并用DeltaAngle始终记录有符号的最小值（350°和-10°取后者）
@@ -347,8 +357,8 @@ namespace ProjectTools.AnimationPreview
                 rightFootPositions[i] = CaptureFootPosition(rightFoot, calibration.RightFootSoleOffset);
                 //这里不是乘法，四元数*Vector3代表将Vector3向四元数方向旋转
                 trajectoryPoints.Add(modelOrigin + modelRotation * accumulatedPosition);
-                previousRootPosition = animator.transform.position;
-                previousRootRotation = animator.transform.rotation;
+                previousRootPosition = currentRootPosition;
+                previousRootRotation = currentRootRotation;
             }
             //记录轨迹终点
             trajectoryEnd = trajectoryPoints[trajectoryPoints.Count - 1];
@@ -740,6 +750,30 @@ namespace ProjectTools.AnimationPreview
         private static Vector3 CaptureFootPosition(Transform foot, Vector3 soleOffset)
         {
             return foot.TransformPoint(soleOffset);
+        }
+
+        private static bool TryGetHumanoidRootMotionCurves(AnimationClip sourceClip, out AnimationCurve positionX, out AnimationCurve positionY, out AnimationCurve positionZ, out AnimationCurve rotationX, out AnimationCurve rotationY, out AnimationCurve rotationZ, out AnimationCurve rotationW)
+        {
+            positionX = AnimationUtility.GetEditorCurve(sourceClip, EditorCurveBinding.FloatCurve(string.Empty, typeof(Animator), "RootT.x"));
+            positionY = AnimationUtility.GetEditorCurve(sourceClip, EditorCurveBinding.FloatCurve(string.Empty, typeof(Animator), "RootT.y"));
+            positionZ = AnimationUtility.GetEditorCurve(sourceClip, EditorCurveBinding.FloatCurve(string.Empty, typeof(Animator), "RootT.z"));
+            rotationX = AnimationUtility.GetEditorCurve(sourceClip, EditorCurveBinding.FloatCurve(string.Empty, typeof(Animator), "RootQ.x"));
+            rotationY = AnimationUtility.GetEditorCurve(sourceClip, EditorCurveBinding.FloatCurve(string.Empty, typeof(Animator), "RootQ.y"));
+            rotationZ = AnimationUtility.GetEditorCurve(sourceClip, EditorCurveBinding.FloatCurve(string.Empty, typeof(Animator), "RootQ.z"));
+            rotationW = AnimationUtility.GetEditorCurve(sourceClip, EditorCurveBinding.FloatCurve(string.Empty, typeof(Animator), "RootQ.w"));
+            return positionX != null && positionY != null && positionZ != null && rotationX != null && rotationY != null && rotationZ != null && rotationW != null;
+        }
+
+        private static Vector3 EvaluateRootPosition(AnimationCurve positionX, AnimationCurve positionY, AnimationCurve positionZ, float time)
+        {
+            return new Vector3(positionX.Evaluate(time), positionY.Evaluate(time), positionZ.Evaluate(time));
+        }
+
+        private static Quaternion EvaluateRootRotation(AnimationCurve rotationX, AnimationCurve rotationY, AnimationCurve rotationZ, AnimationCurve rotationW, float time)
+        {
+            Quaternion value = new Quaternion(rotationX.Evaluate(time), rotationY.Evaluate(time), rotationZ.Evaluate(time), rotationW.Evaluate(time));
+            float magnitudeSquared = value.x * value.x + value.y * value.y + value.z * value.z + value.w * value.w;
+            return magnitudeSquared > 0.0001f ? value.normalized : Quaternion.identity;
         }
         /// <summary>
         /// 拿Avatar，优先模型的

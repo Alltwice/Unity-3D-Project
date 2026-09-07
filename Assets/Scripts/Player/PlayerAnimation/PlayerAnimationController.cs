@@ -18,6 +18,8 @@ public sealed class PlayerAnimationController : MonoBehaviour
     private AnimancerState stableLoopState;
     private AnimancerState hardLandingState;
     private AnimancerState dodgeState;
+    private AnimancerState dodgeToIdleFadeSourceState;
+    private AnimancerState dodgeToIdleFadeState;
     private PlayerMotionAnimationBinding activeBinding;
     private float entryPoseEndProgress;
     private bool entrySourceUsesLocomotionPhase;
@@ -42,8 +44,16 @@ public sealed class PlayerAnimationController : MonoBehaviour
         gameplayStateType = currentGameplayStateType;
         bool newMotion = motion.ActiveDefinition != null && motion.InstanceId != presentedMotionInstanceId;
         bool motionCancelled = motion.JustCancelled && motion.InstanceId == presentedMotionInstanceId;
-        if (newMotion) PlayMotion(motion, locomotionPhase);
-        else if (motionCancelled) ClearBoundary();
+        if (newMotion)
+        {
+            if (transition.HasValue && IsDodgeToIdleEntry(transition.Value)) PlayDodgeToIdleMotion(motion, locomotionPhase);
+            else PlayMotion(motion, locomotionPhase);
+        }
+        else if (motionCancelled)
+        {
+            ClearDodgeToIdleFade();
+            ClearBoundary();
+        }
         if (transition.HasValue && !newMotion) PlayStateTransition(transition.Value, locomotionPhase, landingPresentation);
         else if (!newMotion && !motionCancelled && motion.ActiveDefinition != null && motion.InstanceId == presentedMotionInstanceId) UpdateBoundaryMotion(motion, locomotionPhase);
         else if (!newMotion && !transition.HasValue && motionCancelled) PlayStableLoop(gameplayStateType, locomotionPhase);
@@ -70,6 +80,7 @@ public sealed class PlayerAnimationController : MonoBehaviour
     /// </summary>
     private void PlayMotion(PlayerMotionSnapshot motion, PlayerLocomotionPhaseSnapshot locomotionPhase)
     {
+        ClearDodgeToIdleFade();
         ++presentationSequence;
         presentedMotionInstanceId = motion.InstanceId;
         if (animationSet == null || !animationSet.TryGetBinding(motion.ActiveDefinition, motion.ActiveProfile, out PlayerMotionAnimationBinding binding, out ClipTransition transition))
@@ -102,6 +113,46 @@ public sealed class PlayerAnimationController : MonoBehaviour
         ApplyMotionPoseWeights(motion);
     }
 
+    private void PlayDodgeToIdleMotion(PlayerMotionSnapshot motion, PlayerLocomotionPhaseSnapshot locomotionPhase)
+    {
+        ClearDodgeToIdleFade();
+        ++presentationSequence;
+        presentedMotionInstanceId = motion.InstanceId;
+        if (animationSet == null || !animationSet.TryGetBinding(motion.ActiveDefinition, motion.ActiveProfile, out PlayerMotionAnimationBinding binding, out ClipTransition transition) || dodgeState == null)
+        {
+            PlayMotion(motion, locomotionPhase);
+            return;
+        }
+        AnimancerState sourceState = dodgeState;
+        ClearBoundary();
+        StopUnownedActiveStates(sourceState);
+        entrySourceLoopState = null;
+        entrySourceUsesLocomotionPhase = false;
+        entryPoseEndProgress = 0f;
+        exitHandoffLoopState = null;
+        stableLoopState = null;
+        activeBinding = binding;
+        hardLandingState = null;
+        float motionDuration = motion.ActiveDefinition.GetDuration(motion.ActiveProfile);
+        float timeUntilExitHandoff = motionDuration > 0f ? Mathf.Max(0f, (motion.ActiveDefinition.ExitHandoffStartProgress - motion.Progress) * motionDuration) : 0f;
+        float fadeDuration = Mathf.Min(Mathf.Max(0f, transition.FadeDuration), timeUntilExitHandoff);
+        AnimancerState endState = animancer.Play(transition, fadeDuration, FadeMode.FixedDuration);
+        endState.Speed = 0f;
+        endState.IsPlaying = false;
+        endState.NormalizedTime = motion.Progress;
+        boundaryState = endState;
+        dodgeToIdleFadeSourceState = sourceState;
+        dodgeToIdleFadeState = endState;
+        DebugBoundaryPhase = motion.Progress;
+        if (fadeDuration <= 0f)
+        {
+            CompleteDodgeToIdleFade();
+            if (motion.ExitHandoffActive || motion.JustCompleted) EnsureExitHandoffLoop(locomotionPhase);
+            ApplyMotionPoseWeights(motion);
+            if (motion.JustCompleted) ClearBoundary(false);
+        }
+    }
+
     private void UpdateBoundaryMotion(PlayerMotionSnapshot motion, PlayerLocomotionPhaseSnapshot locomotionPhase)
     {
         if (boundaryState == null || activeBinding == null) return;
@@ -109,6 +160,7 @@ public sealed class PlayerAnimationController : MonoBehaviour
         boundaryState.IsPlaying = false;
         boundaryState.NormalizedTime = motion.Progress;
         DebugBoundaryPhase = motion.Progress;
+        if (dodgeToIdleFadeSourceState != null && (!dodgeToIdleFadeSourceState.IsActive || motion.ExitHandoffActive || motion.JustCompleted)) CompleteDodgeToIdleFade();
         if (!IsEntryPoseActive(motion)) ClearEntrySourceLoop();
         if (motion.ExitHandoffActive || motion.JustCompleted)
         {
@@ -131,7 +183,7 @@ public sealed class PlayerAnimationController : MonoBehaviour
     /// <param name="motion"></param>
     private void ApplyMotionPoseWeights(PlayerMotionSnapshot motion)
     {
-        if (boundaryState == null || activeBinding == null) return;
+        if (boundaryState == null || activeBinding == null || dodgeToIdleFadeSourceState != null) return;
         float entryTargetWeight = entrySourceLoopState == null ? 1f : activeBinding.EvaluateEntryPoseWeight(ResolveEntryPoseProgress(motion));
         float exitTargetWeight = exitHandoffLoopState != null && (motion.ExitHandoffActive || motion.JustCompleted) ? motion.JustCompleted ? 1f : activeBinding.EvaluateExitPoseWeight(motion.ExitHandoffProgress) : 0f;
         float sourceWeight = 1f - entryTargetWeight;
@@ -200,6 +252,7 @@ public sealed class PlayerAnimationController : MonoBehaviour
     private void PlayStateTransition(PlayerStateTransition transition, PlayerLocomotionPhaseSnapshot locomotionPhase, PlayerLandingPresentationKey? landingPresentation)
     {
         ++presentationSequence;
+        ClearDodgeToIdleFade();
         ClearBoundary();
         dodgeState = null;
         if (transition.CurrentStateType == typeof(PlayerDodgeState))
@@ -345,6 +398,33 @@ public sealed class PlayerAnimationController : MonoBehaviour
             exitHandoffLoopState = null;
             stableLoopState = null;
         }
+    }
+
+    private static bool IsDodgeToIdleEntry(PlayerStateTransition transition)
+    {
+        return transition.PreviousStateType == typeof(PlayerDodgeState) && transition.CurrentStateType == typeof(PlayerIdleState) && transition.Reason == PlayerStateTransitionReason.DodgeCompleted;
+    }
+
+    private void CompleteDodgeToIdleFade()
+    {
+        AnimancerState sourceState = dodgeToIdleFadeSourceState;
+        AnimancerState endState = dodgeToIdleFadeState;
+        if (endState != null && endState.FadeGroup != null) endState.FadeGroup.Finish();
+        dodgeToIdleFadeSourceState = null;
+        dodgeToIdleFadeState = null;
+        if (sourceState == dodgeState) dodgeState = null;
+        if (sourceState != null && sourceState != boundaryState) sourceState.Stop();
+    }
+
+    private void ClearDodgeToIdleFade()
+    {
+        AnimancerState sourceState = dodgeToIdleFadeSourceState;
+        AnimancerState endState = dodgeToIdleFadeState;
+        dodgeToIdleFadeSourceState = null;
+        dodgeToIdleFadeState = null;
+        if (sourceState == dodgeState) dodgeState = null;
+        if (endState != null) endState.Stop();
+        if (sourceState != null && sourceState != endState) sourceState.Stop();
     }
 
     private void ClearEntrySourceLoop(AnimancerState retainedState = null)

@@ -13,5 +13,5 @@ MonoBehaviour:
   m_Name: DefaultPlayerDodgeConfig
   m_EditorClassIdentifier: Assembly-CSharp::PlayerDodgeConfig
   cooldown: 0.35
-  duration: 0.4
-  speed: 8
+  duration: 0.3
+  speed: 12

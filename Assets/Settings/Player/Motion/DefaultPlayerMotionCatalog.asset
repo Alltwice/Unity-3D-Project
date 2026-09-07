@@ -49,6 +49,8 @@ MonoBehaviour:
     definition: {fileID: 11400000, guid: dcfc2dc37d5f46e49895f84a800b1f51, type: 2}
   - id: 18
     definition: {fileID: 11400000, guid: 61858b1e90e2e3141a5fa38470f03480, type: 2}
+  - id: 19
+    definition: {fileID: 11400000, guid: 914d5af84a0566d41b3b4e198654a72e, type: 2}
   locomotionCycles:
   - mode: 1
     defaultProfile: {fileID: 11400000, guid: 4fc4d00ff7bdfd4459abe29460a7d4cb, type: 2}

@@ -21,7 +21,8 @@ public enum PlayerMotionId
     FastRunTurn180Right,
     LandWalk = 16,
     LandRun = 17,
-    LandRoll = 18
+    LandRoll = 18,
+    DodgeToIdle = 19
 }
 /// <summary>
 /// 组织每一份动画数据
