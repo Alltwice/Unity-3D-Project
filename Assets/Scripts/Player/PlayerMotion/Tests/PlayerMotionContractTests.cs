@@ -100,7 +100,7 @@ public class PlayerMotionContractTests
         PlayerMovementConfig config = ScriptableObject.CreateInstance<PlayerMovementConfig>();
         PlayerMotionRuntime runtime = new PlayerMotionRuntime();
         PlayerGameplayIntent intent = PlayerGameplayIntent.Create(Vector3.forward, Vector3.forward);
-        intent.LocomotionMode = PlayerLocomotionMode.Dodge;
+        intent.LocomotionMode = PlayerLocomotionMode.Idle;
         runtime.Begin(definition, Vector3.forward, Vector3.forward);
         Vector3 total = Vector3.zero;
         int guard = fps * 3;

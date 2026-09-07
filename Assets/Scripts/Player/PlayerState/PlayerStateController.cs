@@ -18,6 +18,7 @@ public class PlayerStateController : MonoBehaviour
     public PlayerStateBase CurrentState => currentState;
     public PlayerLocomotionMode CurrentLocomotionMode => currentState?.LocomotionMode ?? PlayerLocomotionMode.Idle;
     public PlayerLocomotionMode TargetGroundMode => context?.TargetGroundMode ?? PlayerLocomotionMode.Idle;
+    public bool HasGroundMoveContinuationIntent => context?.HasGroundMoveContinuationIntent ?? false;
     public float CurrentPresentationProgress => currentState?.PresentationProgress ?? 0f;
 
     private void Awake()

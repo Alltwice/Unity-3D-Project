@@ -7,15 +7,7 @@ public sealed class PlayerDodgeState : PlayerStateBase
 {
     public PlayerDodgeState(PlayerContext context) : base(context) { }
     public override PlayerLocomotionMode LocomotionMode => PlayerLocomotionMode.Dodge;
-
-    public override PlayerStateTransitionRequest EvaluateInputTransition()
-    {
-        if (!Context.IsGrounded)
-        {
-            return null;
-        }
-        return Context.ActionBuffer.HasBuffered(PlayerBufferedAction.Jump) && Context.Jump.CanJump(Context.IsGrounded) ? new PlayerStateTransitionRequest(typeof(PlayerAirState), PlayerStateTransitionReason.Jumped) : null;
-    }
+    public override float PresentationProgress => Context.Dodge.Progress;
 
     public override void Enter(PlayerStateTransition transition)
     {
@@ -26,6 +18,7 @@ public sealed class PlayerDodgeState : PlayerStateBase
     public override void Tick(float deltaTime, ref PlayerGameplayIntent intent)
     {
         intent.LocomotionMode = PlayerLocomotionMode.Dodge;
+        Context.Dodge.Tick(deltaTime, ref intent);
     }
 
     public override PlayerStateTransitionRequest EvaluateResultTransition()
@@ -34,7 +27,7 @@ public sealed class PlayerDodgeState : PlayerStateBase
         {
             return new PlayerStateTransitionRequest(typeof(PlayerAirState), PlayerStateTransitionReason.Fell);
         }
-        if (!Context.MotionSnapshot.JustCompleted)
+        if (!Context.Dodge.IsComplete)
         {
             return null;
         }

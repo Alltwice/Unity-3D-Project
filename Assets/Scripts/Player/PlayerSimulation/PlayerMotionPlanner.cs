@@ -121,8 +121,7 @@ public class PlayerMotionPlanner : MonoBehaviour
         Type previous = transition.PreviousStateType;
         Type current = transition.CurrentStateType;
         PlayerMotionId id;
-        if (current == typeof(PlayerDodgeState)) id = PlayerMotionId.Dodge;
-        else if (previous == typeof(PlayerIdleState) && current == typeof(PlayerWalkState)) id = ResolveStartId(PlayerMotionId.IdleToWalk, PlayerMotionId.WalkStart180Left, PlayerMotionId.WalkStart180Right, intent);
+        if (previous == typeof(PlayerIdleState) && current == typeof(PlayerWalkState)) id = ResolveStartId(PlayerMotionId.IdleToWalk, PlayerMotionId.WalkStart180Left, PlayerMotionId.WalkStart180Right, intent);
         else if (previous == typeof(PlayerIdleState) && current == typeof(PlayerRunState)) id = ResolveStartId(PlayerMotionId.IdleToRun, PlayerMotionId.RunStart180Left, PlayerMotionId.RunStart180Right, intent);
         else { definition = null; return false; }
         return catalog.TryGet(id, out definition);
@@ -138,7 +137,6 @@ public class PlayerMotionPlanner : MonoBehaviour
         PlayerMotionId id;
         if (previous == typeof(PlayerWalkState) && current == typeof(PlayerIdleState)) id = PlayerMotionId.WalkToIdle;
         else if (previous == typeof(PlayerRunState) && current == typeof(PlayerIdleState)) id = PlayerMotionId.RunToIdle;
-        else if (previous == typeof(PlayerDodgeState) && current == typeof(PlayerIdleState)) id = PlayerMotionId.FastRunToIdle;
         else if (previous == typeof(PlayerFastRunState) && current == typeof(PlayerIdleState)) id = PlayerMotionId.FastRunToIdle;
         else { definition = null; return false; }
         return catalog.TryGet(id, out definition);

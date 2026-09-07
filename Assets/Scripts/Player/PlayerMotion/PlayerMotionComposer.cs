@@ -6,6 +6,11 @@ public static class PlayerMotionComposer
 {
     public static PlayerMotorCommand Compose(PlayerGameplayIntent intent, PlayerMotionFrame motionFrame, PlayerMotorResult previousMotorResult, PlayerMovementConfig config, float deltaTime, Vector3 currentFacing)
     {
+        if (intent.HasPlanarVelocityOverride)
+        {
+            PlayerMotorRotationMode rotation = intent.DesiredFacingDirection.sqrMagnitude > 0.0001f ? PlayerMotorRotationMode.FaceDirection : PlayerMotorRotationMode.None;
+            return new PlayerMotorCommand(PlayerMotorTranslationMode.ImmediateVelocityDriven, intent.PlanarVelocityOverride, 0f, Vector3.zero, rotation, intent.DesiredFacingDirection, 0f, intent.HasVerticalImpulse, intent.VerticalImpulse, intent.PlanarVelocityDuration);
+        }
         //目标速度
         Vector3 targetVelocity = intent.DesiredMoveDirection * ResolveSpeed(intent.LocomotionMode, config.Locomotion);
         //在加速度影响下每帧真实速度

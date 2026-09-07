@@ -317,7 +317,8 @@ public enum PlayerAnimationCue
     LandingLv1,
     LandingLv2,
     LandingLv3,
-    HardLanding
+    HardLanding,
+    Dodge
 }
 
 [CreateAssetMenu(fileName = "PlayerAnimationSet", menuName = "Player/Animation Set")]
@@ -330,6 +331,7 @@ public class PlayerAnimationSet : ScriptableObject
     [SerializeField] private PlayerLocomotionAnimationGroup sprint = new PlayerLocomotionAnimationGroup();
     [SerializeField] private PlayerJumpAnimationGroup jump = new PlayerJumpAnimationGroup();
     [SerializeField] private PlayerLandingAnimationGroup landing = new PlayerLandingAnimationGroup();
+    [SerializeField] private ClipTransition dodge = new ClipTransition();
     [SerializeField] private PlayerOtherAnimationGroup other = new PlayerOtherAnimationGroup();
 
     public PlayerMotionCatalog MotionCatalog => motionCatalog;
@@ -384,6 +386,7 @@ public class PlayerAnimationSet : ScriptableObject
     {
         transition = cue switch
         {
+            PlayerAnimationCue.Dodge => dodge,
             PlayerAnimationCue.JumpStart => jump?.JumpStart,
             PlayerAnimationCue.LandingLv1 => landing?.Land1,
             PlayerAnimationCue.LandingLv2 => landing?.Land2,
@@ -461,6 +464,7 @@ public class PlayerAnimationSet : ScriptableObject
         valid &= ValidateCycleBindings(PlayerLocomotionMode.Walk, walk?.Loop, "Walk.Loop", errors);
         valid &= ValidateCycleBindings(PlayerLocomotionMode.Run, run?.Loop, "Run.Loop", errors);
         valid &= ValidateCycleBindings(PlayerLocomotionMode.FastRun, sprint?.Loop, "Sprint.Loop", errors);
+        valid &= ValidateTransition(dodge, "Dodge", errors);
         valid &= ValidateTransition(jump?.JumpStart, "Jump.JumpStart", errors);
         valid &= ValidateTransition(jump?.AirLoop, "Jump.AirLoop", errors);
         // 落地表现槽位允许缺省，未绑定时由运行时直接进入目标地面循环。

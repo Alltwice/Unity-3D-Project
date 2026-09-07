@@ -17,6 +17,7 @@ public sealed class PlayerAnimationController : MonoBehaviour
     private AnimancerState entrySourceLoopState;
     private AnimancerState stableLoopState;
     private AnimancerState hardLandingState;
+    private AnimancerState dodgeState;
     private PlayerMotionAnimationBinding activeBinding;
     private float entryPoseEndProgress;
     private bool entrySourceUsesLocomotionPhase;
@@ -47,6 +48,11 @@ public sealed class PlayerAnimationController : MonoBehaviour
         else if (!newMotion && !motionCancelled && motion.ActiveDefinition != null && motion.InstanceId == presentedMotionInstanceId) UpdateBoundaryMotion(motion, locomotionPhase);
         else if (!newMotion && !transition.HasValue && motionCancelled) PlayStableLoop(gameplayStateType, locomotionPhase);
         ApplyLoopPhase(locomotionPhase);
+        if (gameplayStateType == typeof(PlayerDodgeState) && dodgeState != null)
+        {
+            dodgeState.Speed = 0f;
+            dodgeState.NormalizedTime = stateProgress;
+        }
         if (gameplayStateType == typeof(PlayerHardLandingState) && hardLandingState != null)
         {
             hardLandingState.Speed = 0f;
@@ -195,6 +201,17 @@ public sealed class PlayerAnimationController : MonoBehaviour
     {
         ++presentationSequence;
         ClearBoundary();
+        dodgeState = null;
+        if (transition.CurrentStateType == typeof(PlayerDodgeState))
+        {
+            if (animationSet.TryResolveCue(PlayerAnimationCue.Dodge, out ClipTransition dodgeTransition))
+            {
+                dodgeState = animancer.Play(dodgeTransition);
+                dodgeState.Speed = 0f;
+                dodgeState.NormalizedTime = 0f;
+            }
+            return;
+        }
         if (transition.CurrentStateType == typeof(PlayerHardLandingState))
         {
             hardLandingState = null;
@@ -303,7 +320,7 @@ public sealed class PlayerAnimationController : MonoBehaviour
         if (stateType == typeof(PlayerFastRunState)) return PlayerLocomotionMode.FastRun;
         if (stateType == typeof(PlayerAirState)) return PlayerLocomotionMode.Air;
         if (stateType == typeof(PlayerHardLandingState)) return PlayerLocomotionMode.HardLanding;
-        if (stateType == typeof(PlayerDodgeState)) return PlayerLocomotionMode.FastRun;
+        if (stateType == typeof(PlayerDodgeState)) return PlayerLocomotionMode.Dodge;
         return PlayerLocomotionMode.Idle;
     }
 

@@ -99,7 +99,7 @@ public class PlayerFootMotionTests
         [Test]
         public void EmptyNonLoopAutoResultIsWarningOnly()
         {
-            PlayerMotionProfile source = AssetDatabase.LoadAssetAtPath<PlayerMotionProfile>("Assets/Settings/Player/Motion/Profiles/DodgeMotionProfile.asset");
+            PlayerMotionProfile source = AssetDatabase.LoadAssetAtPath<PlayerMotionProfile>("Assets/Settings/Player/Motion/Profiles/LandRunMotionProfile.asset");
             Assert.That(source, Is.Not.Null);
             PlayerMotionProfile profile = ScriptableObject.CreateInstance<PlayerMotionProfile>();
             EditorJsonUtility.FromJsonOverwrite(EditorJsonUtility.ToJson(source), profile);
@@ -226,7 +226,7 @@ public class PlayerFootMotionTests
         [Test]
         public void BatchSourceResolutionFailureDoesNotCommitProfiles()
         {
-            PlayerMotionProfile target = AssetDatabase.LoadAssetAtPath<PlayerMotionProfile>("Assets/Settings/Player/Motion/Profiles/DodgeMotionProfile.asset");
+            PlayerMotionProfile target = AssetDatabase.LoadAssetAtPath<PlayerMotionProfile>("Assets/Settings/Player/Motion/Profiles/LandRunMotionProfile.asset");
             PlayerMotionProfile unaffected = AssetDatabase.LoadAssetAtPath<PlayerMotionProfile>("Assets/Settings/Player/Motion/Profiles/LandWalkMotionProfile.asset");
             Assert.That(target, Is.Not.Null);
             Assert.That(unaffected, Is.Not.Null);
@@ -255,7 +255,7 @@ public class PlayerFootMotionTests
         [Test]
         public void BatchDefinitionValidationFailureDoesNotCommitProfiles()
         {
-            PlayerMotionDefinition definition = AssetDatabase.LoadAssetAtPath<PlayerMotionDefinition>("Assets/Settings/Player/Motion/Definitions/DodgeDefinition.asset");
+            PlayerMotionDefinition definition = AssetDatabase.LoadAssetAtPath<PlayerMotionDefinition>("Assets/Settings/Player/Motion/Definitions/LandRunMotionDefinition.asset");
             PlayerMotionProfile unaffected = AssetDatabase.LoadAssetAtPath<PlayerMotionProfile>("Assets/Settings/Player/Motion/Profiles/LandWalkMotionProfile.asset");
             Assert.That(definition, Is.Not.Null);
             Assert.That(unaffected, Is.Not.Null);

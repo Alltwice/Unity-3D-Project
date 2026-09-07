@@ -48,7 +48,12 @@ public class PlayerMotor : MonoBehaviour
         //重力
         else verticalVelocity += config.MotorPhysics.Gravity * dt;
         Vector3 planarDisplacement;
-        if (command.TranslationMode == PlayerMotorTranslationMode.VelocityDriven)
+        if (command.TranslationMode == PlayerMotorTranslationMode.ImmediateVelocityDriven)
+        {
+            horizontalVelocity = Vector3.ProjectOnPlane(command.TargetPlanarVelocity, Vector3.up);
+            planarDisplacement = horizontalVelocity * Mathf.Clamp(command.PlanarVelocityDuration, 0f, dt);
+        }
+        else if (command.TranslationMode == PlayerMotorTranslationMode.VelocityDriven)
         {
             horizontalVelocity = Vector3.MoveTowards(horizontalVelocity, command.TargetPlanarVelocity, command.PlanarAcceleration * dt);
             planarDisplacement = horizontalVelocity * dt;

@@ -25,7 +25,6 @@ namespace ProjectTools.AnimationPreview
             PlayerMotionProfileBatchBakeReport report = new PlayerMotionProfileBatchBakeReport();
             List<string> profilePaths = FindProfilePaths();
             report.DiscoveredCount = profilePaths.Count;
-            if (profilePaths.Count != 36) AddError(report, "Motion Profile 目录应准确包含 36 个 Profile，实际发现 " + profilePaths.Count + " 个。");
 
             List<StagedProfile> stagedProfiles = new List<StagedProfile>(profilePaths.Count);
             for (int index = 0; index < profilePaths.Count; index++)
@@ -107,7 +106,7 @@ namespace ProjectTools.AnimationPreview
             if (profileName.IndexOf("Loop", StringComparison.OrdinalIgnoreCase) >= 0) { mode = PlayerFootPlantDetectionMode.Loop; return true; }
             if (profileName.IndexOf("Stop", StringComparison.OrdinalIgnoreCase) >= 0) { mode = PlayerFootPlantDetectionMode.Stop; return true; }
             if (profileName.IndexOf("Turn", StringComparison.OrdinalIgnoreCase) >= 0) { mode = PlayerFootPlantDetectionMode.Turn; return true; }
-            if (profileName.IndexOf("Start", StringComparison.OrdinalIgnoreCase) >= 0 || profileName.IndexOf("Dodge", StringComparison.OrdinalIgnoreCase) >= 0 || profileName.IndexOf("Land", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (profileName.IndexOf("Start", StringComparison.OrdinalIgnoreCase) >= 0 || profileName.IndexOf("Land", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 mode = PlayerFootPlantDetectionMode.Start;
                 return true;

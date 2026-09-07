@@ -18,7 +18,9 @@ public enum PlayerLocomotionMode
 public enum PlayerMotorTranslationMode
 {
     VelocityDriven,
-    DisplacementDriven
+    DisplacementDriven,
+    // 直接采用指定速度，仅在命令的有效时间内积分
+    ImmediateVelocityDriven
 }
 /// <summary>
 /// 旋转模式
@@ -60,6 +62,9 @@ public struct PlayerGameplayIntent
     public Vector3 DesiredFacingDirection;
     public float VerticalImpulse;
     public bool HasVerticalImpulse;
+    public bool HasPlanarVelocityOverride;
+    public Vector3 PlanarVelocityOverride;
+    public float PlanarVelocityDuration;
     /// <summary>
     /// 建立输入意图
     /// </summary>
@@ -77,6 +82,16 @@ public struct PlayerGameplayIntent
         };
     }
     /// <summary>
+    /// 覆盖水平速度，duration 为本帧有效移动时间
+    /// </summary>
+    public void RequestPlanarVelocity(Vector3 velocity, float duration)
+    {
+        HasPlanarVelocityOverride = true;
+        PlanarVelocityOverride = velocity;
+        PlanarVelocityDuration = duration;
+    }
+
+    /// <summary>
     /// 请求一次垂直冲量
     /// </summary>
     public void RequestVerticalImpulse(float impulse)
@@ -90,7 +105,7 @@ public struct PlayerGameplayIntent
 /// </summary>
 public struct PlayerMotorCommand
 {
-    public PlayerMotorCommand(PlayerMotorTranslationMode translationMode, Vector3 targetPlanarVelocity, float planarAcceleration, Vector3 planarDisplacement, PlayerMotorRotationMode rotationMode, Vector3 desiredFacingDirection, float yawDelta, bool hasVerticalImpulse, float verticalImpulse)
+    public PlayerMotorCommand(PlayerMotorTranslationMode translationMode, Vector3 targetPlanarVelocity, float planarAcceleration, Vector3 planarDisplacement, PlayerMotorRotationMode rotationMode, Vector3 desiredFacingDirection, float yawDelta, bool hasVerticalImpulse, float verticalImpulse, float planarVelocityDuration = 0f)
     {
         TranslationMode = translationMode;
         TargetPlanarVelocity = targetPlanarVelocity;
@@ -102,11 +117,13 @@ public struct PlayerMotorCommand
         YawDelta = yawDelta;
         HasVerticalImpulse = hasVerticalImpulse;
         VerticalImpulse = verticalImpulse;
+        PlanarVelocityDuration = planarVelocityDuration;
     }
 
     public PlayerMotorTranslationMode TranslationMode { get; }
     public Vector3 TargetPlanarVelocity { get; }
     public float PlanarAcceleration { get; }
+    public float PlanarVelocityDuration { get; }
     public Vector3 PlanarDisplacement { get; }
     public PlayerMotorRotationMode RotationMode { get; }
     public Vector3 DesiredFacingDirection { get; }
