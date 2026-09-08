@@ -16,6 +16,7 @@ public static class PlayerMotionComposer
         //在加速度影响下每帧真实速度
         Vector3 predictedVelocity = CalculateVelocity(previousMotorResult.HorizontalVelocity, targetVelocity, intent.LocomotionMode, config.Locomotion, deltaTime);
         PlayerMotorTranslationMode translationMode = PlayerMotorTranslationMode.VelocityDriven;
+        ResolveRotation(intent, motionFrame, currentFacing, out PlayerMotorRotationMode rotationMode, out Vector3 facingDirection, out float yawDelta);
         Vector3 displacement = Vector3.zero;
         //烘焙和程序混合态时的位移信息
         if (motionFrame.IsValid && motionFrame.Definition.TranslationPolicy != PlayerMotionTranslationPolicy.VelocityDriven)
@@ -25,12 +26,20 @@ public static class PlayerMotionComposer
             float entrySourceWeight = 1f - entryTargetWeight;
             float authoredWeight = entryTargetWeight * exitSourceWeight;
             float targetLocomotionWeight = entryTargetWeight * (1f - exitSourceWeight);
+            Vector3 authoredDisplacement = motionFrame.AuthoredPlanarDisplacement;
+            if (motionFrame.Definition.TranslationPolicy == PlayerMotionTranslationPolicy.SteeredLocalTrajectory)
+            {
+                Vector3 planarFacing = Vector3.ProjectOnPlane(currentFacing, Vector3.up);
+                float existingCorrection = Vector3.SignedAngle(motionFrame.AuthoredFacingBeforeStep, planarFacing, Vector3.up);
+                float stepCorrection = yawDelta - motionFrame.AuthoredYawDelta;
+                //用帧内修正中点旋转位移增量，动画自身的 Yaw 不重复应用
+                authoredDisplacement = Quaternion.AngleAxis(existingCorrection + stepCorrection * 0.5f, Vector3.up) * authoredDisplacement;
+            }
             displacement = motionFrame.EntrySourcePlanarVelocity * deltaTime * entrySourceWeight
-                + motionFrame.AuthoredPlanarDisplacement * authoredWeight
+                + authoredDisplacement * authoredWeight
                 + predictedVelocity * deltaTime * targetLocomotionWeight;
             if (entrySourceWeight > 0f || authoredWeight > 0f) translationMode = PlayerMotorTranslationMode.DisplacementDriven;
         }
-        ResolveRotation(intent, motionFrame, currentFacing, out PlayerMotorRotationMode rotationMode, out Vector3 facingDirection, out float yawDelta);
         float acceleration = ResolveAcceleration(previousMotorResult.HorizontalVelocity, targetVelocity, intent.LocomotionMode, config.Locomotion);
         return new PlayerMotorCommand(translationMode, targetVelocity, acceleration, displacement, rotationMode, facingDirection, yawDelta, intent.HasVerticalImpulse, intent.VerticalImpulse);
     }

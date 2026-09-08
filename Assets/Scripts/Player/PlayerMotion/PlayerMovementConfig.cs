@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Serialization;
 /// <summary>
 /// 移动设置
 /// </summary>
@@ -66,18 +65,12 @@ public class PlayerMovementConfig : ScriptableObject
         [Min(0f)] [SerializeField] private float lv2MinFallDistance = 1f;
         [Min(0f)] [SerializeField] private float lv3MinFallDistance = 2f;
         [Min(0f)] [SerializeField] private float lv4MinFallDistance = 3f;
-        [Min(0f)] [SerializeField] private float lv2MinImpactSpeed = 6f;
-        [Min(0f)] [SerializeField] private float lv3MinImpactSpeed = 8f;
-        [FormerlySerializedAs("hardLandingMinImpactSpeed")] [Min(0f)] [SerializeField] private float lv4MinImpactSpeed = 10f;
         [Min(0.01f)] [SerializeField] private float hardLandingDuration = 1.8667f;
         [Range(0f, 1f)] [SerializeField] private float hardLandingInterruptProgress = 0.6f;
 
         public float Lv2MinFallDistance => lv2MinFallDistance;
         public float Lv3MinFallDistance => lv3MinFallDistance;
         public float Lv4MinFallDistance => lv4MinFallDistance;
-        public float Lv2MinImpactSpeed => lv2MinImpactSpeed;
-        public float Lv3MinImpactSpeed => lv3MinImpactSpeed;
-        public float Lv4MinImpactSpeed => lv4MinImpactSpeed;
         public float HardLandingDuration => hardLandingDuration;
         public float HardLandingInterruptProgress => hardLandingInterruptProgress;
 
@@ -85,7 +78,6 @@ public class PlayerMovementConfig : ScriptableObject
         {
             bool valid = true;
             if (!(lv2MinFallDistance < lv3MinFallDistance && lv3MinFallDistance < lv4MinFallDistance)) { errors?.Add("Landing FallDistance 阈值必须满足 Lv2 < Lv3 < Lv4。"); valid = false; }
-            if (!(lv2MinImpactSpeed < lv3MinImpactSpeed && lv3MinImpactSpeed < lv4MinImpactSpeed)) { errors?.Add("Landing ImpactSpeed 阈值必须满足 Lv2 < Lv3 < Lv4。"); valid = false; }
             return valid;
         }
     }

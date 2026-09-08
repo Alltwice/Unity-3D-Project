@@ -1,7 +1,7 @@
 # CodeMap
 
 > 本文记录当前项目功能、模块与文件位置的对应关系  
-> 最后核对的运行时代码基线：当前工作树（2026-09-06）
+> 最后核对的运行时代码基线：当前工作树（2026-09-08，包含未提交的落地简化改动）
 
 ## 1. 功能与实现位置
 
@@ -10,7 +10,7 @@
 | 玩家系统每帧执行顺序 | `Assets/Scripts/Player/PlayerSimulation/PlayerSimulationDriver.cs` |
 | Idle / Walk / Run / Dodge / Air / Landing 状态转换 | `Assets/Scripts/Player/PlayerState/PlayerStateController.cs` + 对应 State |
 | 状态共享的输入与模拟事实 | `Assets/Scripts/Player/PlayerState/PlayerContext.cs` |
-| Start / Stop / Turn / Dodge / Landing Motion 选择 | `Assets/Scripts/Player/PlayerSimulation/PlayerMotionPlanner.cs` |
+| Start / Stop / Turn / DodgeToIdle Motion 选择 | `Assets/Scripts/Player/PlayerSimulation/PlayerMotionPlanner.cs` |
 | 烘焙 Motion 的时间推进 | `Assets/Scripts/Player/PlayerMotion/PlayerMotionRuntime.cs` |
 | Motion 的位移 / 旋转 / Entry/Exit Handoff / Transition Lock 策略 | `Assets/Scripts/Player/PlayerMotion/PlayerMotionDefinition.cs` |
 | 动画烘焙数据、Foot Motion Channel 与 Foot Marker | `Assets/Scripts/Player/PlayerMotion/PlayerMotionProfile.cs` + `PlayerFoot.cs` |
@@ -115,7 +115,7 @@ State 共享依赖和模拟事实：
 - Jump / Dodge
 - Movement Config
 - Motor / Motion / Landing Snapshot
-- Walk 模式、FastRun latch、零输入宽限
+- Walk 模式、FastRun latch、零输入宽限计时与 HasGroundMoveContinuationIntent（默认宽限 0.1 秒）
 - Pending vertical impulse
 
 ### `PlayerStateBase.cs`
@@ -161,7 +161,9 @@ State 提出的候选转换，只描述目标状态与原因，不执行切换�
 - `IPlayerInputSource`
 - `IPlayerActionBuffer`
 
-关键顺序：`HandleStateTransition` 在 State Tick 之前，`ResolveContinuousMotion` 在 State Tick 之后；Motor 执行和 LandingSnapshot 产生之后才进行 Post-Tick 状态转换。
+关键顺序：`HandleStateTransition` 在 State Tick 之前，`ResolveContinuousMotion` 在 State Tick 之后；Motor 执行和 LandingSnapshot 产生之后才进行 Post-Tick 状态转换。落地表现由 Driver 结合 Snapshot 与 Post-Tick Transition 提交，不再调用 Planner 启动落地 Motion。
+
+`ResolveEffectiveMoveDirection` 在 Pre-Tick 转换后及 Post-Tick 转换后调用：地面移动模式中缓存原始世界方向（含幅值），零输入宽限内复用；其他模式或宽限失效时清理。缓存由 Driver 持有，宽限计时与延续意图由 Context 持有，原始输入仍独立供状态决策使用。
 
 ### `PlayerMotionPlanner.cs`
 
@@ -171,11 +173,10 @@ Gameplay → Motion 的规划器。
 
 - State Transition → MotionId / MotionDefinition
 - Start / Stop
-- Dodge
+- DodgeCompleted → Idle 的 DodgeToIdle
 - 180° Start / Turn
-- Motion-backed Landing
 - Foot Phase 驱动的左右脚 Profile 选择
-- Stop Motion 的 Entry Source 捕获只读取 `PhaseSnapshot.Mode` 与 `MotorResult.HorizontalVelocity`
+- 所有 Motion Begin 共用 Entry Source 捕获：Definition 启用 Entry Handoff 且 Phase 有地面 Loop 时，读取 `PhaseSnapshot.Mode` 与 `MotorResult.HorizontalVelocity`
 - `PlayerMotionRuntime` 生命周期
 - 持有并提交 `PlayerLocomotionPhaseRuntime`
 
@@ -203,13 +204,12 @@ Project.PlayerMotion.Runtime
 
 - `PlayerMotorResult`
 - 当前高度
-- 当前 Locomotion Mode
-- Target Ground Mode
-- 是否仍有 Move Intent
+
+落地帧只依据空中最高高度与当前高度的差值划分 Lv1～Lv4；默认 Lv2 / Lv3 / Lv4 阈值为 1 / 2 / 3 米。
 
 ### `PlayerLandingSnapshot.cs`
 
-一次落地事件的稳定数据快照，直接供 Gameplay 状态事实、`PlayerSimulationDriver` 与 `PlayerLandingPresentationResolver` 消费；Driver 再依据解析结果调用 Planner 或 AnimationController。
+一次落地事件的稳定数据快照，仅包含 Sequence、Severity、FallDistance 与派生的 IsLandingEvent，供 Gameplay 状态事实、`PlayerSimulationDriver` 与 `PlayerLandingPresentationResolver` 消费；Driver 再依据状态转换和解析结果提交 AnimationController。
 
 ### `PlayerLandingPresentationResolver.cs`
 
@@ -219,7 +219,8 @@ Project.PlayerMotion.Runtime
 
 - 普通 Edge：`Land1` / `Land2` / `Land3`
 - 重落地：`HardLand`，其 Clip 存储在 `PlayerAnimationSet` 的 `Land4` 资源槽
-- Motion-backed Landing：`LandWalk` / `LandRun` / `LandRoll`
+
+当前落地仅使用上述表现语义，不启动 Motion。
 
 ## 9. PlayerMotion Runtime
 
@@ -234,7 +235,7 @@ Motion 基础 Runtime 程序集，自身 `references` 列表为空，是数据�
 Player Simulation 跨层基础数据契约：
 
 - `PlayerLocomotionMode`
-- `PlayerGameplayIntent`
+- `PlayerGameplayIntent`：含平面速度覆盖、有效移动时长与垂直冲量
 - `PlayerMotorCommand`
 - `PlayerMotorResult`
 - `PlayerMotionEntrySource`
@@ -328,14 +329,16 @@ Profile 由 Editor 工具生成和维护；Gameplay Runtime 消费烘焙结果�
 - 烘焙位移、Yaw
 - Entry Source 捕获与 Entry Handoff 进度/目标位移权重
 - Exit Handoff 进度与 Translation Authority
-- Completion / Cancellation
+- Completion / Cancellation：结束帧保留快照引用，下一次 BeginFrame 清理
 - Transition Lock
 
 ### `PlayerMotionComposer.cs`
 
+`SteeredLocalTrajectory = 5` 由 `PlayerMotionDefinition` 配置并校验 `ProfileYaw + EntryFacing` 及主/左右脚 Profile 的 XZ、Yaw 数据。`PlayerMotionRuntime` 记录开始 Yaw，并在 `PlayerMotionFrame.AuthoredFacingBeforeStep` 提供帧前理论世界朝向；Composer 先解析旋转，再用已有朝向偏差与本帧额外修正的中点旋转动画位移项，之后进入原有三路 Handoff 混合。原有位移策略和资产选择保持不变。
+
 将 `PlayerGameplayIntent + PlayerMotionFrame + previous PlayerMotorResult` 合成为最终 `PlayerMotorCommand`，其输出只流向 `PlayerMotor`，不直接流向 `PlayerAnimationSet`。
 
-当 Motion 使用烘焙位移时，Composer 按 Entry Source 速度、Authored Motion 位移和目标 Locomotion 预测速度的统一三路权重合成平面位移。
+优先处理 Intent 的平面速度覆盖，生成 `ImmediateVelocityDriven` 命令（含有效时长）；该分支用于 Dodge。当 Motion 使用烘焙位移时，Composer 按 Entry Source 速度、Authored Motion 位移和目标 Locomotion 预测速度的统一三路权重合成平面位移。
 
 ### Foot / Phase
 
@@ -344,7 +347,7 @@ Profile 由 Editor 工具生成和维护；Gameplay Runtime 消费烘焙结果�
 | `PlayerFoot.cs` | `PlayerFoot`、Foot Plant Marker、Foot Motion Channel 与自动检测模式等基础语义 |
 | `PlayerFootCalibration.cs` | 角色脚部检测/烘焙所需校准数据 |
 | `PlayerLocomotionCycleDefinition.cs` | Walk / Run / FastRun 的循环相位数据定义 |
-| `PlayerLocomotionPhaseRuntime.cs` | 根据实际运动与 Motion 状态推进脚步/循环相位；Entry Handoff 期间保留 Source Loop 并继续推进 |
+| `PlayerLocomotionPhaseRuntime.cs` | 根据实际位移推进相位；Entry Handoff 优先保留 Source Loop；其他 Active Motion 在 Exit 前暂停 Loop，进入 Exit 时建立目标 Cycle |
 | `PlayerLocomotionPhaseSnapshot.cs` | 对 Planner 与 AnimationController 暴露稳定相位事实 |
 
 默认 Foot Calibration 资产位于：
@@ -369,7 +372,7 @@ Profile 由 Editor 工具生成和维护；Gameplay Runtime 消费烘焙结果�
 
 主要职责：
 
-- Velocity / Displacement 两种平移方式
+- VelocityDriven / ImmediateVelocityDriven / DisplacementDriven 三种平移方式；立即速度按本帧有效时长积分
 - Gravity / vertical velocity
 - vertical impulse
 - CharacterController.Move
@@ -389,11 +392,12 @@ Jump 能力参数/规则，向状态层提供是否可跳与跳跃冲量计算�
 
 ### `PlayerDodge.cs`
 
-Dodge 能力侧的进入规则与运行状态，例如 Active 和 Cooldown；Dodge 的 Gameplay 生命周期在 `PlayerDodgeState`，Motion 选择在 `PlayerMotionPlanner`。
+Dodge 能力维护 Active、方向、Speed、Duration、Progress 与退出后的 Cooldown；Tick 向 Intent 写入平面速度覆盖及本帧剩余有效时长。`PlayerDodgeState` 拥有 Begin / Tick / End，并以 IsComplete 裁决完成后的转换：无原始输入进入 Idle，否则进入 FastRun。Dodge 本体通过 Composer → Motor 移动，通过 Dodge Cue 表现；Planner 只在 DodgeCompleted → Idle 时选择 DodgeToIdle Motion。
 
 相关配置：
 
 - `Assets/Scripts/Player/Config/PlayerDodgeConfig.cs`
+- `Assets/Settings/Player/DefaultPlayerDodgeConfig.asset`：当前 Duration 0.3 秒、Speed 12、Cooldown 0.35 秒
 
 ## 11. Animation Presentation
 
@@ -415,7 +419,9 @@ Animancer 表现入口。
 主要负责：
 
 - Boundary Motion 播放与按 Motion Progress 手动采样
-- Motion 开始时取消 Animancer Fade、停止未拥有的活动 State，并统一写入所持 State 权重
+- 普通 Motion 开始时取消 Animancer Fade、停止未拥有的活动 State，并统一写入所持 State 权重
+- `PlayDodgeToIdleMotion`：保留 Dodge Pose，以 FixedDuration Fade 进入结束 Motion；Fade 期间暂停手动权重，最迟在 Exit Handoff 开始时完成 Fade，再交给 Exit 权重
+- Dodge 按 State PresentationProgress 采样；Walk / Run 互切使用 FixedDuration Fade
 - Entry Handoff：有 Motion Entry Source 时按 Phase Snapshot 采样源 Loop；无有效 Source 时按 Clip FadeDuration 建立回退 Entry Pose 区间
 - Exit Handoff：按 Exit Pose Weight 将 Boundary Pose 混合到 Locomotion Loop
 - Entry / Exit 重叠时按 `1-Entry`、`Entry×(1-Exit)`、`Entry×Exit` 组合 Source、Boundary、Target 三路姿态权重
@@ -443,7 +449,7 @@ Presentation Cue / Landing Key
     → ClipTransition
 ```
 
-Motion Binding 同时保存 Entry Pose Weight 与 Exit Pose Weight 曲线；当前默认 Motion Binding 使用线性 Entry / Exit Pose Weight。
+Motion Binding 同时保存 Entry Pose Weight 与 Exit Pose Weight 曲线；默认 WalkToIdle / RunToIdle / FastRunToIdle 的 Entry Pose 为端点零切线的平滑曲线，其余默认 Entry 与默认 Exit 为线性。Dodge Cue 独立映射 Other.Dodge，DodgeToIdle 为 Other 中的 Motion Binding；Landing 组只有 Land1～Land4 ClipTransition。
 
 默认资产：
 
@@ -466,14 +472,14 @@ Editor-only 工具程序集，依赖 `Project.PlayerMotion.Runtime`。
 | 文件 | 职责 |
 |---|---|
 | `AnimationPreviewWindow.cs` | 动画预览工具窗口入口 |
-| `AnimationPreviewSession.cs` | 预览会话与状态管理 |
+| `AnimationPreviewSession.cs` | 预览会话与采样；Humanoid 优先读取完整 RootT / RootQ 曲线，否则从模型 Transform 采样根运动；脚部从采样后的骨骼读取 |
 | `AnimationPreviewViewport.cs` | 预览视口 |
 | `AnimationPreviewProfile.cs` | 预览配置数据 |
 | `AnimationPreviewProfileEditor.cs` | Profile Inspector 与打开预览窗口的入口 |
 | `AnimationPreviewSequence.cs` | 预览序列描述 |
 | `AnimationPreviewClipLibrary.cs` | 预览 Clip 组织 |
 | `PlayerMotionBaker.cs` | 从 AnimationClip 烘焙 `PlayerMotionProfile` 数据 |
-| `PlayerMotionProfileBatchBaker.cs` | 批量生成/刷新 Profile，并校验 Motion 相关资产 |
+| `PlayerMotionProfileBatchBaker.cs` | 按发现的 Profile 批量生成/刷新并校验 Motion 相关资产，不限定固定 Profile 数量 |
 | `PlayerFootPlantDetector.cs` | 根据 Foot Motion Channel 自动检测 Plant Marker |
 | `PlayerFootPlantMarkerEditor.cs` | Foot Plant Marker 的编辑、自动生成与写回辅助 |
 | `AssemblyInfo.cs` | 向 Editor Tests 暴露程序集 internal 类型 |
@@ -521,19 +527,18 @@ Runtime 当前不依赖这些 Editor 类型。
 | `DefaultPlayerMovementConfig.asset` | 默认移动 / Physics / Landing 参数 |
 | `DefaultPlayerMotionCatalog.asset` | 默认 Motion 与 Locomotion Cycle 索引 |
 | `DefaultPlayerAnimationSet.asset` | 默认动画资源映射 |
-| `Definitions/` | 各 Start / Stop / Turn / Dodge / Landing MotionDefinition |
+| `Definitions/` | 各 Start / Stop / Turn / DodgeToIdle MotionDefinition |
 | `Profiles/` | 烘焙 MotionProfile |
 | `FootCalibration/` | Foot 检测/烘焙校准资产 |
 
-当前默认 Catalog 包含 19 个 Motion Definition 索引，以及 Walk / Run / FastRun 三个 Locomotion Cycle。
-
-19 个默认 Motion Definition 均配置 Entry / Exit Handoff：Entry 通常为 `0→0.2`，`WalkToIdle` 为 `0→0.12`，Exit 为 `0.7→1`。有有效地面 Loop Source 时 Entry 同时驱动位移与姿态移交；无有效 Source 时 AnimationController 使用 Clip FadeDuration 形成回退 Entry Pose。
+当前默认 Catalog 包含 16 个 Motion Definition 与 Walk / Run / FastRun 三个 Locomotion Cycle。15 个 Start / Stop / Turn Definition 的 Entry 通常为 `0→0.2`，`WalkToIdle` 为 `0→0.12`，Exit 为 `0.7→1`；`DodgeToIdle` 关闭 Entry Handoff，Exit 为 `0.8→1`。Dodge 本体使用能力速度与独立 Clip，Catalog 中没有 Dodge 或移动落地 Motion。
 
 ## 15. 非主链路代码
 
 仓库中还存在资源包和演示脚本，例如：
 
 - `Assets/FemaleRunnerAnimset/`
+- `Assets/CommonMaleMovementAnimSet/`
 - `Assets/DoubleL/Demo Scenes/`
 
 它们不属于当前 Player 主运行链路。当前主链路位于：
@@ -583,7 +588,7 @@ PlayerMotionCatalog ──索引──► PlayerMotionDefinition ──引用─
 Entry / Exit Handoff 的关键数据流：
 
 ```text
-Stop Transition + PhaseSnapshot + MotorResult.HorizontalVelocity
+Motion Begin + PhaseSnapshot + MotorResult.HorizontalVelocity
                          │
                          ▼
                 PlayerMotionPlanner
@@ -635,7 +640,6 @@ PlayerContext / AirState   PlayerSimulationDriver
 StateController        PresentationResolver
     │                          │
     └──── Transition ──────────┤
-                               ├── Motion-backed ──► PlayerMotionPlanner
                                └── Presentation ───► PlayerAnimationController
 ```
 

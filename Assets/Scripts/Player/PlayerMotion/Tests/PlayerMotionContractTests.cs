@@ -202,7 +202,7 @@ public class PlayerMotionContractTests
 
     private static PlayerMotorResult MotorResult(Vector3 horizontalVelocity)
     {
-        return new PlayerMotorResult(Vector3.zero, Vector3.zero, horizontalVelocity, 0f, true, false, 0f, CollisionFlags.None);
+        return new PlayerMotorResult(Vector3.zero, Vector3.zero, horizontalVelocity, 0f, true, false, CollisionFlags.None);
     }
 
     private static void Destroy(params Object[] objects)

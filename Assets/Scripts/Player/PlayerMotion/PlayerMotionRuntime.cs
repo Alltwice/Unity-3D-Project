@@ -16,6 +16,11 @@ public struct PlayerMotionFrame
     }
 
     public PlayerMotionFrame(PlayerMotionDefinition definition, PlayerMotionProfile profile, PlayerFoot entryLastPlantFoot, Vector3 authoredPlanarDisplacement, float authoredYawDelta, float remainingAuthoredYaw, float previousProgress, float currentProgress, float exitTranslationAuthority, bool entryHandoffActive, float entryTargetTranslationWeight, Vector3 entrySourcePlanarVelocity)
+        : this(definition, profile, entryLastPlantFoot, authoredPlanarDisplacement, authoredYawDelta, remainingAuthoredYaw, previousProgress, currentProgress, exitTranslationAuthority, entryHandoffActive, entryTargetTranslationWeight, entrySourcePlanarVelocity, Vector3.zero)
+    {
+    }
+
+    public PlayerMotionFrame(PlayerMotionDefinition definition, PlayerMotionProfile profile, PlayerFoot entryLastPlantFoot, Vector3 authoredPlanarDisplacement, float authoredYawDelta, float remainingAuthoredYaw, float previousProgress, float currentProgress, float exitTranslationAuthority, bool entryHandoffActive, float entryTargetTranslationWeight, Vector3 entrySourcePlanarVelocity, Vector3 authoredFacingBeforeStep)
     {
         //定义由谁产生
         Definition = definition;
@@ -25,6 +30,7 @@ public struct PlayerMotionFrame
         AuthoredPlanarDisplacement = authoredPlanarDisplacement;
         //一帧产生旋转
         AuthoredYawDelta = authoredYawDelta;
+        AuthoredFacingBeforeStep = authoredFacingBeforeStep;
         RemainingAuthoredYaw = remainingAuthoredYaw;
         PreviousProgress = previousProgress;
         CurrentProgress = currentProgress;
@@ -40,6 +46,8 @@ public struct PlayerMotionFrame
     public PlayerFoot EntryLastPlantFoot { get; }
     public Vector3 AuthoredPlanarDisplacement { get; }
     public float AuthoredYawDelta { get; }
+    //本帧推进前未经输入修正的理论世界朝向
+    public Vector3 AuthoredFacingBeforeStep { get; }
     public float RemainingAuthoredYaw { get; }
     public float PreviousProgress { get; }
     public float CurrentProgress { get; }
@@ -120,6 +128,7 @@ public class PlayerMotionRuntime
     private float elapsedTime;
     private float duration;
     private float previousProgress;
+    private float startYaw;
     private float currentProgress;
     private bool isActive;
     private bool justCompleted;
@@ -179,6 +188,7 @@ public class PlayerMotionRuntime
         elapsedTime = Mathf.Clamp01(startProgress) * duration;
         previousProgress = Mathf.Clamp01(startProgress);
         currentProgress = previousProgress;
+        startYaw = profile == null ? 0f : profile.EvaluateYaw(currentProgress);
         //记录前方
         basisDirection = NormalizePlanar(basisDirection, Vector3.forward);
         //实际运动方向
@@ -223,7 +233,8 @@ public class PlayerMotionRuntime
         bool entryHandoffActive = HasEntrySource && currentProgress < definition.EntryHandoffEndProgress;
         float entryTargetTranslationWeight = HasEntrySource ? definition.EvaluateEntryTranslationWeight(currentProgress) : 1f;
         //产生这一帧等待消费的移动数据
-        PlayerMotionFrame frame = new PlayerMotionFrame(definition, activeProfile, entryLastPlantFoot, authoredTranslation, authoredYaw, remainingAuthoredYaw, previousProgress, currentProgress, exitTranslationAuthority, entryHandoffActive, entryTargetTranslationWeight, entrySource.PlanarVelocity);
+        Vector3 authoredFacingBeforeStep = basis * (Quaternion.AngleAxis(activeProfile.EvaluateYaw(previousProgress) - startYaw, Vector3.up) * Vector3.forward);
+        PlayerMotionFrame frame = new PlayerMotionFrame(definition, activeProfile, entryLastPlantFoot, authoredTranslation, authoredYaw, remainingAuthoredYaw, previousProgress, currentProgress, exitTranslationAuthority, entryHandoffActive, entryTargetTranslationWeight, entrySource.PlanarVelocity, authoredFacingBeforeStep);
         if (currentProgress >= 1f)
         {
             isActive = false;
@@ -243,6 +254,7 @@ public class PlayerMotionRuntime
                 //方向*（移动过程比例*整体缩放）可理解为速度
                 return travelDirection * ((profile.EvaluateTravelDistance(toProgress) - profile.EvaluateTravelDistance(fromProgress)) * motionDefinition.TranslationScale);
             case PlayerMotionTranslationPolicy.LocalTrajectory:
+            case PlayerMotionTranslationPolicy.SteeredLocalTrajectory:
                 return basis * ((profile.EvaluatePlanarPosition(toProgress) - profile.EvaluatePlanarPosition(fromProgress)) * motionDefinition.TranslationScale);
             default:
                 return Vector3.zero;

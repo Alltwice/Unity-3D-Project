@@ -43,12 +43,6 @@ MonoBehaviour:
     definition: {fileID: 11400000, guid: acbf8be054897ba4b915ffffd196422c, type: 2}
   - id: 14
     definition: {fileID: 11400000, guid: bf1c2571de630e642b36a5850b332b7d, type: 2}
-  - id: 16
-    definition: {fileID: 11400000, guid: f7a91572b6a59b24195f76343496f543, type: 2}
-  - id: 17
-    definition: {fileID: 11400000, guid: dcfc2dc37d5f46e49895f84a800b1f51, type: 2}
-  - id: 18
-    definition: {fileID: 11400000, guid: 61858b1e90e2e3141a5fa38470f03480, type: 2}
   - id: 19
     definition: {fileID: 11400000, guid: 914d5af84a0566d41b3b4e198654a72e, type: 2}
   locomotionCycles:

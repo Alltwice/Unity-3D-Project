@@ -44,35 +44,6 @@ public class PlayerMotionPlanner : MonoBehaviour
         if (runtime.Snapshot.IsActive) runtime.Cancel();
     }
     /// <summary>
-    /// 开始落地烘焙动画演进与id资源绑定
-    /// </summary>
-    public bool TryBeginLandingMotion(PlayerStateTransition transition, PlayerLandingPresentationKey presentation, PlayerGameplayIntent intent, PlayerMotorResult motorResult)
-    {
-        if (transition.PreviousStateType != typeof(PlayerAirState)) return false;
-        PlayerMotionId id;
-        switch (presentation)
-        {
-            case PlayerLandingPresentationKey.LandWalk:
-                if (transition.CurrentStateType != typeof(PlayerWalkState)) return false;
-                id = PlayerMotionId.LandWalk;
-                break;
-            case PlayerLandingPresentationKey.LandRun:
-                if (transition.CurrentStateType != typeof(PlayerRunState)) return false;
-                id = PlayerMotionId.LandRun;
-                break;
-            case PlayerLandingPresentationKey.LandRoll:
-                if (transition.CurrentStateType != typeof(PlayerFastRunState)) return false;
-                id = PlayerMotionId.LandRoll;
-                break;
-            default:
-                return false;
-        }
-        if (catalog == null || !catalog.TryGet(id, out PlayerMotionDefinition definition)) return false;
-        Begin(definition, intent, motorResult);
-        return runtime.Snapshot.IsActive;
-    }
-
-    /// <summary>
     /// 处理了左右转向的动画
     /// </summary>
     public void ResolveContinuousMotion(Type stateType, PlayerGameplayIntent intent, PlayerMotorResult motorResult)

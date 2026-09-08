@@ -19,9 +19,6 @@ public enum PlayerMotionId
     RunTurn180Right,
     FastRunTurn180Left,
     FastRunTurn180Right,
-    LandWalk = 16,
-    LandRun = 17,
-    LandRoll = 18,
     DodgeToIdle = 19
 }
 /// <summary>

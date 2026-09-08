@@ -1,7 +1,7 @@
 # Architecture
 
 > 本文记录项目当前较稳定的职责边界、依赖方向和核心运行流  
-> 最后核对的运行时代码基线：当前工作树（2026-09-06）
+> 最后核对的运行时代码基线：当前工作树（2026-09-08，包含未提交的落地简化改动）
 
 ## 1. 当前架构概览
 
@@ -102,8 +102,6 @@ PlayerMotor 执行 CharacterController 移动
     ↓
 处理 Post-Tick Motion 与落地表现语义
     ↓
-必要时启动 Motion-backed Landing
-    ↓
 提交 Locomotion Phase
     ↓
 AnimationController 消费最终事实并手动评估 Animancer
@@ -187,6 +185,12 @@ EvaluateResultTransition
 - Walk / FastRun 等需要跨状态保存的移动意图状态
 - 待应用的垂直冲量
 
+### 地面移动意图与 Dodge
+
+`PlayerContext` 维护零输入宽限计时及 `HasGroundMoveContinuationIntent`，当前默认宽限为 0.1 秒；`PlayerStateController` 暴露该事实。Driver 在 Pre-Tick 状态转换后解析有效移动方向：Walk / Run / FastRun 中有原始输入时缓存完整世界方向（保留输入幅值），短暂零输入且仍有延续意图时复用缓存；退出这些模式、宽限失效、Init 或 OnDisable 时清理缓存。Post-Tick 转换后以新状态再次解析方向。原始输入仍由 InputSource 保留，Dodge 完成后的 Idle / FastRun 选择读取原始输入。
+
+`PlayerDodgeState` 调用 `PlayerDodge.Begin / Tick / End`，以能力的 Duration 决定完成，以 Progress 提供表现时间。能力在有输入时更新方向，无输入时保持已选方向（首次使用朝向），并向 Intent 写入速度与本帧有效移动时长；Composer 优先生成 ImmediateVelocityDriven 命令，Motor 执行移动。最后一帧仅积分剩余 Dodge 时长，退出时开始冷却。Dodge 本体不经过 MotionProfile 推进。
+
 ### Motion Lock 与状态所有权
 
 `PlayerMotionDefinition` 可以定义 `TransitionLockEndProgress`，由 `PlayerMotionRuntime` 通过 `PlayerMotionSnapshot.IsTransitionLocked` 暴露。
@@ -262,9 +266,9 @@ PlayerMotionDefinition
 它负责：
 
 - 状态进入 / 退出 Motion 解析
-- Dodge / Start / Stop / 180° Turn / Motion-backed Landing 等语义选择
+- Start / Stop / 180° Turn，以及 Dodge 完成进入 Idle 时的 DodgeToIdle Motion 选择
 - 根据 Foot Phase 选择对应 Foot Profile
-- Stop Motion 启动时从 `PhaseSnapshot.Mode` 与 `MotorResult.HorizontalVelocity` 捕获有效的地面 Loop Entry Source
+- Motion 启动时，若 Definition 启用 Entry Handoff 且 Phase 有有效地面 Loop，从 `PhaseSnapshot.Mode` 与 `MotorResult.HorizontalVelocity` 捕获 Entry Source
 - 驱动 `PlayerMotionRuntime`
 - 持有并提交 `PlayerLocomotionPhaseRuntime`
 
@@ -285,6 +289,7 @@ PlayerMotionDefinition
 - 计算 Entry / Exit Handoff 进度、位移权重与 Translation Authority
 - 暴露完成 / 取消 / Transition Lock 快照
 - 产出本帧 `PlayerMotionFrame`
+- 完成帧保留 Definition / Profile 与 JustCompleted 供 Phase / Animation 消费，下一次 BeginFrame 清理已结束实例的引用和帧事件
 
 ## 6. Gameplay Intent → 实际移动
 
@@ -310,9 +315,12 @@ PlayerMotorResult
 
 `PlayerMotionComposer` 是 Gameplay 常规移动与烘焙 Motion 之间的合成边界。
 
+`SteeredLocalTrajectory` 使用 `ProfileYaw + EntryFacing`：Runtime 保留原始局部轨迹位移，并通过 Frame 提供相对本次开始 Yaw 的帧前理论世界朝向。Composer 用实际朝向与理论朝向之差恢复已有修正，叠加本帧额外 Yaw 修正的一半来旋转动画位移增量；动画自身 Yaw 不重复应用，Entry Source 与目标 Locomotion 位移不参与该旋转。Composer 不保存跨帧修正状态，现有资产不自动切换此策略。
+
 状态层表达移动意图，Motion 提供当前特殊运动的本帧贡献，Composer 生成最终 Motor 参数：
 
 - Entry Source 速度、Authored Motion 位移与目标 Locomotion 预测速度使用统一三路权重合成
+- Immediate Velocity Driven：优先消费 Gameplay 的平面速度覆盖与本帧有效时长
 - Velocity Driven
 - Displacement Driven
 - Face Direction
@@ -322,7 +330,7 @@ PlayerMotorResult
 Entry / Exit Handoff 的跨层数据流为：
 
 ```text
-Stop Transition + PhaseSnapshot + MotorResult.HorizontalVelocity
+Motion Begin + PhaseSnapshot + MotorResult.HorizontalVelocity
                               │
                               ▼
                      PlayerMotionPlanner
@@ -344,7 +352,7 @@ Stop Transition + PhaseSnapshot + MotorResult.HorizontalVelocity
 
 它解释 `PlayerMotorCommand`，负责：
 
-- 水平速度或直接位移
+- 常规加减速、立即速度或直接位移；立即速度按命令有效时长（限制在本帧内）积分
 - 重力与垂直速度
 - Jump 垂直冲量
 - Ground Snap
@@ -362,50 +370,25 @@ Stop Transition + PhaseSnapshot + MotorResult.HorizontalVelocity
 
 ### PlayerLandingTracker
 
-`PlayerLandingTracker` 跨帧记录一次空中生命周期，并在落地帧依据：
-
-- 下落距离
-- 落地冲击速度
-- 空中前的地面移动模式
-- 当前是否仍有移动意图
-- 目标地面移动模式
-
-生成一次性的 `PlayerLandingSnapshot`。
+`PlayerLandingTracker` 记录空中最高高度，在 `MotorResult.JustLanded` 时用最高高度与当前高度之差生成一次性的 `PlayerLandingSnapshot`。快照包含 Sequence、Severity 与 FallDistance；等级仅由坠落高度决定，默认 Lv2 / Lv3 / Lv4 阈值分别为 1 / 2 / 3 米。
 
 ### Landing Presentation
 
-落地事实产生后由 `PlayerSimulationDriver` 协调两条分支：
-
 ```text
-MotorResult
+MotorResult + 当前高度
     ↓
-LandingTracker
-    ↓
-LandingSnapshot
-    ├──► StateController / AirState ──► HardLanding 或普通地面状态
-    │                                      │
-    │                                      └──► HardLand 表现
-    │                                             （存储在 Land4 资源槽）
-    │
-    └──► PlayerSimulationDriver
-              │
-              └──► PresentationResolver：选择普通或移动落地语义
-                            │
-             ┌──────────────┴────────────────┐
-             ▼                               ▼
-      普通表现 Edge                  Motion-backed Landing
-      Land1 / Land2 / Land3          LandWalk / LandRun / LandRoll
-             │                               │
-             ▼                               ▼
-     AnimationController                MotionPlanner
-                                             │
-                                             ▼
-                                     AnimationController
+LandingTracker → LandingSnapshot
+    ├──► PlayerContext / AirState → StateController → 普通地面状态或 HardLanding
+    └──► PlayerSimulationDriver + Post-Tick Transition
+              ↓
+        PresentationResolver / HardLanding 分支
+              ↓
+        AnimationController
+              ├── Land1 / Land2 / Land3：Presentation Edge → 目标 Loop
+              └── HardLand（Land4 资源槽）：按状态 PresentationProgress 采样
 ```
 
-`PlayerLandingPresentationResolver` 只消费 `PlayerLandingSnapshot`；`PlayerSimulationDriver` 负责结合已发生的 `PlayerStateTransition` 判断是否产生表现，以及是否启动 Motion-backed Landing。
-
-落地检测、落地 Gameplay 状态、落地 Motion 和落地 Clip 分属不同职责。
+`PlayerLandingPresentationResolver` 只消费 Snapshot，按 Severity 映射 Land1 / Land2 / Land3 / HardLand。Driver 结合本帧 Post-Tick 转换决定是否提交表现；落地立即再次 Jump 时不提交落地表现。当前落地不启动 Motion，移动输入不参与落地等级和 Clip 语义选择；普通移动仍由当前地面状态的 Intent 驱动。
 
 ## 8. Locomotion Phase 与脚步语义
 
@@ -434,7 +417,8 @@ PlayerLocomotionPhaseSnapshot
 
 - Phase 的推进依据实际运动结果与 Motion 状态
 - Entry Handoff Active 时，即使 Gameplay 已切换到 Idle，仍保留当前 Source Loop 的 Profile、VariantFoot 与 NormalizedPhase，并用本帧实际平面位移推进
-- Entry Handoff 完成后按当前 Locomotion 状态正常关闭或重新建立 Loop；Exit Handoff 不改变该 Phase 所有权
+- 有效 Entry Source 且接地时优先保留；不满足保留条件时，离地或非地面 Loop 模式会关闭 Cycle
+- 其余情况下，Active Motion 在 Exit Handoff 前暂停 Loop；进入 Exit Handoff 或地面模式变化时建立目标 Cycle，随后按实际平面位移推进。相位所有权始终在 Phase Runtime
 - AnimationController 不生产 Phase
 - Motion Definition 消费 Phase 选择左右脚版本
 - AnimationController 把同一份 Phase Fact 转换为 Pose
@@ -449,7 +433,7 @@ PlayerLocomotionPhaseSnapshot
 
 - `PlayerMotionDefinition + selected PlayerMotionProfile → Motion ClipTransition`
 - `PlayerLocomotionMode + PlayerFoot → Loop ClipTransition`
-- Jump / Landing 等 Presentation Cue → ClipTransition
+- Jump / Dodge Presentation Cue 与 Landing Key → ClipTransition
 - 校验 Catalog、Definition、Profile 与 Animation Binding 的一致性
 
 ### PlayerAnimationController
@@ -458,12 +442,14 @@ PlayerLocomotionPhaseSnapshot
 
 当前 Animancer Graph 使用 Manual Update。
 
-两类时间来源：
+主要时间来源：
 
 - **Boundary Motion**：按 `PlayerMotionSnapshot.Progress` 手动采样
 - **Ground Loop**：按 `PlayerLocomotionPhaseSnapshot.NormalizedTime` 手动采样
+- **Dodge / HardLanding**：按对应 Gameplay State 的 PresentationProgress 手动采样
+- **Jump / 普通 Landing Edge**：由 Animancer 推进，结束事件切回目标 Loop
 
-Controller 使用 `GetOrCreateState` 建立手动播放状态，取消 Animancer Fade，并在新 Motion 开始时停止自身未持有的活动 State。Motion 播放期间 Source Loop、Boundary Motion 与 Target Loop 的权重统一由 Controller 写入，不再与 Animancer FadeGroup 同时竞争控制权。
+Controller 使用 `GetOrCreateState` 建立手动播放状态，取消 Animancer Fade，并在新 Motion 开始时停止自身未持有的活动 State。普通 Motion 播放期间 Source Loop、Boundary Motion 与 Target Loop 的权重统一由 Controller 写入。DodgeToIdle 入口使用下述独立 Fade 分支。
 
 存在有效 Motion Entry Source 时，Controller 从当前 `stableLoopState` 转移并拥有 `entrySourceLoopState`，按 Phase Snapshot 继续采样源 Loop，并使用 Motion Definition 的 Entry 区间计算姿态权重。不存在有效 Entry Source 时，如果当前稳定 Loop 存在，则使用 `ClipTransition.FadeDuration / Motion Duration` 形成回退 Entry Pose 区间；区间结束、Motion 取消或被替换时清理 Source State。
 
@@ -474,6 +460,8 @@ Source Loop    = 1 - EntryTargetWeight
 Boundary Pose  = EntryTargetWeight × (1 - ExitTargetWeight)
 Target Loop    = EntryTargetWeight × ExitTargetWeight
 ```
+
+Dodge 完成且无原始移动输入时，Planner 启动 `DodgeToIdle`。Controller 保留 Dodge Pose，以 `FadeMode.FixedDuration` 混合到按 Motion Progress 采样的结束 Clip；Fade 时长不超过到 Exit Handoff 起点的剩余时间。Fade 期间暂停三路手动权重写入，源 State 失活或 Motion 进入 Exit / 完成时结束 Fade 并停止源 State，再恢复 Exit Pose 权重。被取消、替换或发生其他状态转换时清理该 Fade。Dodge 完成且仍有输入则进入 FastRun，直接播放目标 Loop。Walk / Run 互切也使用 FixedDuration Fade。
 
 位移侧对应由 `PlayerMotionComposer` 使用 Entry Translation Weight 与 Exit Translation Authority 组合 Entry Source、Authored Motion 和目标 Locomotion 三路位移。
 
@@ -494,6 +482,8 @@ Definitions / Catalog / AnimationSet validation
         ↓
 Runtime
 ```
+
+`AnimationPreviewSession.SampleMotion` 对含完整 RootT / RootQ 曲线的 Humanoid Clip 直接采样本地根运动曲线；其他情况从模型 Transform 采样并撤销模型初始旋转。脚部位置仍由逐帧 Clip.SampleAnimation 后的骨骼采样产生。批量 Baker 按发现的 Profile 处理，不限定固定数量。
 
 `Project.AnimationPreview.Editor.asmdef` 是 Editor-only，并依赖 `Project.PlayerMotion.Runtime`。
 
@@ -565,7 +555,9 @@ Assets/Settings/Player/Motion/
 
 `Assets/Prefabs/Player.prefab` 是当前 Player 组件装配和序列化引用的重要 Source of Truth。
 
-当前默认 Catalog 的 19 个 Motion Definition 均配置 Entry / Exit Handoff：Entry 通常为 `0→0.2`，`WalkToIdle` 为 `0→0.12`，Exit 统一为 `0.7→1`。有有效地面 Loop Source 时 Entry 同时驱动位移与姿态移交；没有有效 Entry Source 时动画层使用 Clip FadeDuration 形成回退姿态混合。
+当前默认 Catalog 包含 16 个 Motion Definition 与 Walk / Run / FastRun 三个 Locomotion Cycle。15 个 Start / Stop / Turn Definition 的 Entry 通常为 `0→0.2`，`WalkToIdle` 为 `0→0.12`，Exit 为 `0.7→1`；`DodgeToIdle` 关闭 Entry Handoff，Exit 为 `0.8→1`。Dodge 本体使用能力速度与独立 Clip，Catalog 中没有 Dodge 或移动落地 Motion。
+
+`Assets/Settings/Player/DefaultPlayerDodgeConfig.asset` 保存 Dodge 参数，当前默认 Duration 为 0.3 秒、Speed 为 12、Cooldown 为 0.35 秒。AnimationSet 中 WalkToIdle / RunToIdle / FastRunToIdle 的 Entry Pose 使用端点零切线的平滑曲线，其余默认 Entry 与默认 Exit Pose 曲线为线性。
 
 ## 13. 当前依赖关系
 

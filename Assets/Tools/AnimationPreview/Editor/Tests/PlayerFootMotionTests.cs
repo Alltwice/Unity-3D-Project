@@ -99,7 +99,7 @@ public class PlayerFootMotionTests
         [Test]
         public void EmptyNonLoopAutoResultIsWarningOnly()
         {
-            PlayerMotionProfile source = AssetDatabase.LoadAssetAtPath<PlayerMotionProfile>("Assets/Settings/Player/Motion/Profiles/LandRunMotionProfile.asset");
+            PlayerMotionProfile source = AssetDatabase.LoadAssetAtPath<PlayerMotionProfile>("Assets/Settings/Player/Motion/Profiles/RunStopRightFootMotionProfile.asset");
             Assert.That(source, Is.Not.Null);
             PlayerMotionProfile profile = ScriptableObject.CreateInstance<PlayerMotionProfile>();
             EditorJsonUtility.FromJsonOverwrite(EditorJsonUtility.ToJson(source), profile);
@@ -226,8 +226,8 @@ public class PlayerFootMotionTests
         [Test]
         public void BatchSourceResolutionFailureDoesNotCommitProfiles()
         {
-            PlayerMotionProfile target = AssetDatabase.LoadAssetAtPath<PlayerMotionProfile>("Assets/Settings/Player/Motion/Profiles/LandRunMotionProfile.asset");
-            PlayerMotionProfile unaffected = AssetDatabase.LoadAssetAtPath<PlayerMotionProfile>("Assets/Settings/Player/Motion/Profiles/LandWalkMotionProfile.asset");
+            PlayerMotionProfile target = AssetDatabase.LoadAssetAtPath<PlayerMotionProfile>("Assets/Settings/Player/Motion/Profiles/RunStopRightFootMotionProfile.asset");
+            PlayerMotionProfile unaffected = AssetDatabase.LoadAssetAtPath<PlayerMotionProfile>("Assets/Settings/Player/Motion/Profiles/WalkStopRightFootMotionProfile.asset");
             Assert.That(target, Is.Not.Null);
             Assert.That(unaffected, Is.Not.Null);
             string targetBefore = EditorJsonUtility.ToJson(target);
@@ -255,8 +255,8 @@ public class PlayerFootMotionTests
         [Test]
         public void BatchDefinitionValidationFailureDoesNotCommitProfiles()
         {
-            PlayerMotionDefinition definition = AssetDatabase.LoadAssetAtPath<PlayerMotionDefinition>("Assets/Settings/Player/Motion/Definitions/LandRunMotionDefinition.asset");
-            PlayerMotionProfile unaffected = AssetDatabase.LoadAssetAtPath<PlayerMotionProfile>("Assets/Settings/Player/Motion/Profiles/LandWalkMotionProfile.asset");
+            PlayerMotionDefinition definition = AssetDatabase.LoadAssetAtPath<PlayerMotionDefinition>("Assets/Settings/Player/Motion/Definitions/RunToIdleDefinition.asset");
+            PlayerMotionProfile unaffected = AssetDatabase.LoadAssetAtPath<PlayerMotionProfile>("Assets/Settings/Player/Motion/Profiles/WalkStopRightFootMotionProfile.asset");
             Assert.That(definition, Is.Not.Null);
             Assert.That(unaffected, Is.Not.Null);
             string definitionBefore = EditorJsonUtility.ToJson(definition);

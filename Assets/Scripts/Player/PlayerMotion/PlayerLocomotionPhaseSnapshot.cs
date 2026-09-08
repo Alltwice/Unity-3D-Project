@@ -1,5 +1,5 @@
 /// <summary>
-/// Simulation 提交给表现层和 Motion Planner 的循环步态事实。
+/// Simulation 提交给表现层和 Motion Planner 的循环步态事实
 /// </summary>
 public struct PlayerLocomotionPhaseSnapshot
 {

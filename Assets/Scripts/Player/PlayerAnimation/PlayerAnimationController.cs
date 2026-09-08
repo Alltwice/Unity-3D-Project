@@ -17,6 +17,7 @@ public sealed class PlayerAnimationController : MonoBehaviour
     private AnimancerState entrySourceLoopState;
     private AnimancerState stableLoopState;
     private AnimancerState hardLandingState;
+    private AnimancerState landingState;
     private AnimancerState dodgeState;
     private AnimancerState dodgeToIdleFadeSourceState;
     private AnimancerState dodgeToIdleFadeState;
@@ -57,6 +58,11 @@ public sealed class PlayerAnimationController : MonoBehaviour
         if (transition.HasValue && !newMotion) PlayStateTransition(transition.Value, locomotionPhase, landingPresentation);
         else if (!newMotion && !motionCancelled && motion.ActiveDefinition != null && motion.InstanceId == presentedMotionInstanceId) UpdateBoundaryMotion(motion, locomotionPhase);
         else if (!newMotion && !transition.HasValue && motionCancelled) PlayStableLoop(gameplayStateType, locomotionPhase);
+        if (!newMotion && !motionCancelled && !transition.HasValue && landingState != null && landingState.NormalizedTime >= landingState.NormalizedEndTime)
+        {
+            landingState = null;
+            PlayStableLoop(gameplayStateType, locomotionPhase);
+        }
         ApplyLoopPhase(locomotionPhase);
         if (gameplayStateType == typeof(PlayerDodgeState) && dodgeState != null)
         {
@@ -80,6 +86,7 @@ public sealed class PlayerAnimationController : MonoBehaviour
     /// </summary>
     private void PlayMotion(PlayerMotionSnapshot motion, PlayerLocomotionPhaseSnapshot locomotionPhase)
     {
+        landingState = null;
         ClearDodgeToIdleFade();
         ++presentationSequence;
         presentedMotionInstanceId = motion.InstanceId;
@@ -115,6 +122,7 @@ public sealed class PlayerAnimationController : MonoBehaviour
 
     private void PlayDodgeToIdleMotion(PlayerMotionSnapshot motion, PlayerLocomotionPhaseSnapshot locomotionPhase)
     {
+        landingState = null;
         ClearDodgeToIdleFade();
         ++presentationSequence;
         presentedMotionInstanceId = motion.InstanceId;
@@ -251,6 +259,7 @@ public sealed class PlayerAnimationController : MonoBehaviour
 
     private void PlayStateTransition(PlayerStateTransition transition, PlayerLocomotionPhaseSnapshot locomotionPhase, PlayerLandingPresentationKey? landingPresentation)
     {
+        landingState = null;
         ++presentationSequence;
         ClearDodgeToIdleFade();
         ClearBoundary();
@@ -291,20 +300,23 @@ public sealed class PlayerAnimationController : MonoBehaviour
         }
         if (transition.PreviousStateType == typeof(PlayerAirState) && IsGroundState(transition.CurrentStateType) && landingPresentation.HasValue)
         {
-            if (IsLandingMotion(landingPresentation.Value))
-            {
-                PlayStableLoop(transition.CurrentStateType, locomotionPhase);
-                return;
-            }
             if (animationSet != null && animationSet.TryResolveLandingPresentation(landingPresentation.Value, out ClipTransition landing))
             {
-                PlayPresentationEdge(landing, transition.CurrentStateType, locomotionPhase, presentationSequence);
-                return;
+                PlayLandingPresentation(landing);
+                if (transition.CurrentStateType==typeof(PlayerIdleState))
+                {
+                    return;
+                }
             }
             PlayStableLoop(transition.CurrentStateType, locomotionPhase);
             return;
         }
         PlayStableLoop(transition.CurrentStateType, locomotionPhase);
+    }
+
+    private void PlayLandingPresentation(ClipTransition landing)
+    {
+        landingState = animancer.Play(landing);
     }
 
     private void PlayPresentationEdge(ClipTransition edge, Type targetLoopStateType, PlayerLocomotionPhaseSnapshot locomotionPhase, ulong sequence)
@@ -380,11 +392,6 @@ public sealed class PlayerAnimationController : MonoBehaviour
     private static bool IsGroundState(Type stateType)
     {
         return stateType == typeof(PlayerIdleState) || stateType == typeof(PlayerWalkState) || stateType == typeof(PlayerRunState) || stateType == typeof(PlayerFastRunState);
-    }
-
-    private static bool IsLandingMotion(PlayerLandingPresentationKey presentation)
-    {
-        return presentation == PlayerLandingPresentationKey.LandWalk || presentation == PlayerLandingPresentationKey.LandRun || presentation == PlayerLandingPresentationKey.LandRoll;
     }
 
     private void ClearBoundary(bool clearLoop = true)

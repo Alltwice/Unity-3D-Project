@@ -14,7 +14,9 @@ public enum PlayerMotionTranslationPolicy
     //保留运动轨迹
     LocalTrajectory = 3,
     //使用当前 GameplayIntent 方向和动画移动距离
-    TravelAlongDesiredDirection = 4
+    TravelAlongDesiredDirection = 4,
+    //保留局部轨迹，并跟随身体的额外转向修正
+    SteeredLocalTrajectory = 5
 }
 /// <summary>
 /// 处理旋转方式
@@ -174,10 +176,25 @@ public class PlayerMotionDefinition : ScriptableObject
             valid = false;
         }
         valid &= ValidateEntryTranslationWeight(errors);
+        if (translationPolicy == PlayerMotionTranslationPolicy.SteeredLocalTrajectory)
+        {
+            if (rotationPolicy != PlayerMotionRotationPolicy.ProfileYaw || basisPolicy != PlayerMotionBasisPolicy.EntryFacing) { errors?.Add(name + ": SteeredLocalTrajectory 需要 ProfileYaw + EntryFacing。"); valid = false; }
+            valid &= ValidateSteeredTrajectoryProfile(profile, errors);
+            if (leftFootProfile != null) valid &= ValidateSteeredTrajectoryProfile(leftFootProfile, errors);
+            if (rightFootProfile != null) valid &= ValidateSteeredTrajectoryProfile(rightFootProfile, errors);
+        }
         if (float.IsNaN(transitionLockEndProgress) || float.IsInfinity(transitionLockEndProgress) || transitionLockEndProgress < 0f || transitionLockEndProgress > 1f) { errors?.Add(name + ": TransitionLockEndProgress 必须是 0 到 1 的有限值。"); valid = false; }
         if (rotationPolicy == PlayerMotionRotationPolicy.ProfileYaw && !profile.HasYaw) { errors?.Add(name + ": ProfileYaw 需要有效 Yaw channel。"); valid = false; }
         if (translationPolicy == PlayerMotionTranslationPolicy.LocalTrajectory && !profile.HasPlanarPosition) { errors?.Add(name + ": LocalTrajectory 需要有效 XZ channel。"); valid = false; }
         if ((translationPolicy == PlayerMotionTranslationPolicy.TravelAlongCapturedDirection || translationPolicy == PlayerMotionTranslationPolicy.TravelAlongDesiredDirection) && !profile.HasTravelDistance) { errors?.Add(name + ": TravelAlong 需要有效 Travel channel。"); valid = false; }
+        return valid;
+    }
+
+    private bool ValidateSteeredTrajectoryProfile(PlayerMotionProfile motionProfile, ICollection<string> errors)
+    {
+        bool valid = true;
+        if (!motionProfile.HasPlanarPosition) { errors?.Add(name + ": SteeredLocalTrajectory 的 " + motionProfile.name + " 需要有效 XZ channel。"); valid = false; }
+        if (!motionProfile.HasYaw) { errors?.Add(name + ": SteeredLocalTrajectory 的 " + motionProfile.name + " 需要有效 Yaw channel。"); valid = false; }
         return valid;
     }
 

@@ -136,7 +136,7 @@ public struct PlayerMotorCommand
 /// </summary>
 public readonly struct PlayerMotorResult
 {
-    public PlayerMotorResult(Vector3 actualDisplacement, Vector3 actualPlanarDisplacement, Vector3 horizontalVelocity, float verticalVelocity, bool isGrounded, bool justLanded, float landingImpactSpeed, CollisionFlags collisionFlags)
+    public PlayerMotorResult(Vector3 actualDisplacement, Vector3 actualPlanarDisplacement, Vector3 horizontalVelocity, float verticalVelocity, bool isGrounded, bool justLanded, CollisionFlags collisionFlags)
     {
         //实际移动
         ActualDisplacement = actualDisplacement;
@@ -147,8 +147,6 @@ public readonly struct PlayerMotorResult
         VerticalVelocity = verticalVelocity;
         IsGrounded = isGrounded;
         JustLanded = justLanded;
-        //落地瞬间速度
-        LandingImpactSpeed = landingImpactSpeed;
         //碰撞结果
         CollisionFlags = collisionFlags;
     }
@@ -160,7 +158,6 @@ public readonly struct PlayerMotorResult
     public float VerticalVelocity { get; }
     public bool IsGrounded { get; }
     public bool JustLanded { get; }
-    public float LandingImpactSpeed { get; }
     public CollisionFlags CollisionFlags { get; }
 }
 

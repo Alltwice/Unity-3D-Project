@@ -31,7 +31,7 @@ public class PlayerMotor : MonoBehaviour
         if (initialized) return;
         groundProbe.Refresh();
         isGrounded = characterController.isGrounded || groundProbe.CanSnapToGround;
-        CurrentResult = new PlayerMotorResult(Vector3.zero, Vector3.zero, Vector3.zero, 0f, isGrounded, false, 0f, CollisionFlags.None);
+        CurrentResult = new PlayerMotorResult(Vector3.zero, Vector3.zero, Vector3.zero, 0f, isGrounded, false, CollisionFlags.None);
         initialized = true;
     }
     /// <summary>
@@ -66,7 +66,6 @@ public class PlayerMotor : MonoBehaviour
         //记录先前的位置
         Vector3 positionBeforeMove = transform.position;
         bool wasGrounded = isGrounded;
-        float downwardSpeedBeforeMove = Mathf.Max(0f, -verticalVelocity);
         //真正执行移动
         CollisionFlags collisionFlags = characterController.Move(planarDisplacement + Vector3.up * (verticalVelocity * dt));
         //CollisionFlags 0001 below;0010 above;0100 aside;
@@ -81,14 +80,13 @@ public class PlayerMotor : MonoBehaviour
         }
         isGrounded = controllerGrounded || snappedToGround;
         bool justLanded = !wasGrounded && isGrounded;
-        float landingImpactSpeed = justLanded ? downwardSpeedBeforeMove : 0f;
         if (isGrounded && verticalVelocity < config.MotorPhysics.GroundedVerticalVelocity) verticalVelocity = config.MotorPhysics.GroundedVerticalVelocity;
         ApplyRotation(command, dt);
         Vector3 actualDisplacement = transform.position - positionBeforeMove;
         Vector3 actualPlanarDisplacement = Vector3.ProjectOnPlane(actualDisplacement, Vector3.up);
         horizontalVelocity = PlayerMotorKinematics.CalculateActualPlanarVelocity(actualDisplacement, dt);
         //拿到计算结果
-        CurrentResult = new PlayerMotorResult(actualDisplacement, actualPlanarDisplacement, horizontalVelocity, verticalVelocity, isGrounded, justLanded, landingImpactSpeed, collisionFlags);
+        CurrentResult = new PlayerMotorResult(actualDisplacement, actualPlanarDisplacement, horizontalVelocity, verticalVelocity, isGrounded, justLanded, collisionFlags);
         return CurrentResult;
     }
 

@@ -7,10 +7,7 @@ public enum PlayerLandingPresentationKey
     Land1 = 1,
     Land2 = 2,
     Land3 = 3,
-    HardLand = 4,
-    LandWalk = 5,
-    LandRun = 6,
-    LandRoll = 7
+    HardLand = 4
 }
 
 /// <summary>
@@ -22,26 +19,6 @@ public static class PlayerLandingPresentationResolver
     {
         presentation = PlayerLandingPresentationKey.None;
         if (!snapshot.IsLandingEvent) return false;
-        if (snapshot.Severity == PlayerLandingSeverity.Lv4)
-        {
-            presentation = PlayerLandingPresentationKey.HardLand;
-            return true;
-        }
-        if (snapshot.HasMoveIntentAtImpact)
-        {
-            switch (snapshot.TargetGroundMode)
-            {
-                case PlayerLocomotionMode.Walk:
-                    presentation = PlayerLandingPresentationKey.LandWalk;
-                    return true;
-                case PlayerLocomotionMode.Run:
-                    presentation = PlayerLandingPresentationKey.LandRun;
-                    return true;
-                case PlayerLocomotionMode.FastRun:
-                    presentation = PlayerLandingPresentationKey.LandRoll;
-                    return true;
-            }
-        }
         presentation = ResolveSeverity(snapshot.Severity);
         return true;
     }

@@ -180,7 +180,7 @@ public sealed class PlayerLocomotionPhaseRuntimeTests
     private static PlayerMotorResult MotorResult(float planarDistance, bool grounded = true)
     {
         Vector3 displacement = Vector3.forward * planarDistance;
-        return new PlayerMotorResult(displacement, displacement, Vector3.zero, 0f, grounded, false, 0f, CollisionFlags.None);
+        return new PlayerMotorResult(displacement, displacement, Vector3.zero, 0f, grounded, false, CollisionFlags.None);
     }
 
     private sealed class PhaseFixture : IDisposable

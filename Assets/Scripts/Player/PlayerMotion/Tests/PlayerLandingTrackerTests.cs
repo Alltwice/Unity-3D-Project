@@ -23,60 +23,63 @@ public class PlayerLandingTrackerTests
     [Test]
     public void Advance_TracksPeakAndEmitsOneLandingSnapshot()
     {
-        Assert.That(tracker.Advance(Result(true), 0f, PlayerLocomotionMode.Run, PlayerLocomotionMode.Run, true).IsLandingEvent, Is.False);
-        tracker.Advance(Result(false), 0.5f, PlayerLocomotionMode.Air, PlayerLocomotionMode.Run, true);
-        tracker.Advance(Result(false), 2.5f, PlayerLocomotionMode.Air, PlayerLocomotionMode.Run, true);
-        tracker.Advance(Result(false), 1f, PlayerLocomotionMode.Air, PlayerLocomotionMode.Idle, false);
+        Assert.That(tracker.Advance(Result(true), 0f).IsLandingEvent, Is.False);
+        tracker.Advance(Result(false), 0.5f);
+        tracker.Advance(Result(false), 2.5f);
+        tracker.Advance(Result(false), 1f);
 
-        PlayerLandingSnapshot landing = tracker.Advance(Result(true, true, 4f), 0f, PlayerLocomotionMode.Air, PlayerLocomotionMode.Idle, false);
+        PlayerLandingSnapshot landing = tracker.Advance(Result(true, true), 0f);
 
         Assert.That(landing.IsLandingEvent, Is.True);
         Assert.That(landing.Sequence, Is.EqualTo(1));
         Assert.That(landing.Severity, Is.EqualTo(PlayerLandingSeverity.Lv3));
         Assert.That(landing.FallDistance, Is.EqualTo(2.5f).Within(0.0001f));
-        Assert.That(landing.ImpactSpeed, Is.EqualTo(4f));
-        Assert.That(landing.AirEntryGroundMode, Is.EqualTo(PlayerLocomotionMode.Run));
-        Assert.That(landing.HasMoveIntentAtImpact, Is.False);
-        Assert.That(landing.TargetGroundMode, Is.EqualTo(PlayerLocomotionMode.Idle));
-        Assert.That(tracker.Advance(Result(true), 0f, PlayerLocomotionMode.Idle, PlayerLocomotionMode.Idle, false).IsLandingEvent, Is.False);
+        Assert.That(tracker.Advance(Result(true), 0f).IsLandingEvent, Is.False);
     }
 
     [Test]
-    public void Advance_UsesHighestSeverityFromDistanceAndImpact()
+    public void Advance_UsesHeightThresholdsOnly()
     {
-        tracker.Advance(Result(true), 0f, PlayerLocomotionMode.Walk, PlayerLocomotionMode.Walk, true);
-        tracker.Advance(Result(false), 0.5f, PlayerLocomotionMode.Air, PlayerLocomotionMode.Walk, true);
+        tracker.Advance(Result(false), 0.5f);
+        PlayerLandingSnapshot lv1 = tracker.Advance(Result(true, true), 0f);
+        tracker.Advance(Result(false), 1f);
+        PlayerLandingSnapshot lv2 = tracker.Advance(Result(true, true), 0f);
+        tracker.Advance(Result(false), 2f);
+        PlayerLandingSnapshot lv3 = tracker.Advance(Result(true, true), 0f);
+        tracker.Advance(Result(false), 3f);
+        PlayerLandingSnapshot lv4 = tracker.Advance(Result(true, true), 0f);
 
-        PlayerLandingSnapshot landing = tracker.Advance(Result(true, true, config.Landing.Lv4MinImpactSpeed), 0f, PlayerLocomotionMode.Air, PlayerLocomotionMode.Walk, true);
-
-        Assert.That(landing.FallDistance, Is.EqualTo(0.5f).Within(0.0001f));
-        Assert.That(landing.Severity, Is.EqualTo(PlayerLandingSeverity.Lv4));
+        Assert.That(lv1.Severity, Is.EqualTo(PlayerLandingSeverity.Lv1));
+        Assert.That(lv2.Severity, Is.EqualTo(PlayerLandingSeverity.Lv2));
+        Assert.That(lv3.Severity, Is.EqualTo(PlayerLandingSeverity.Lv3));
+        Assert.That(lv4.Severity, Is.EqualTo(PlayerLandingSeverity.Lv4));
     }
 
     [Test]
-    public void Advance_FirstAirSampleUsesTargetModeAsEntryFact()
+    public void Advance_ZeroDistanceAirLifecycleIsLevelOne()
     {
-        tracker.Advance(Result(false), 1f, PlayerLocomotionMode.Air, PlayerLocomotionMode.FastRun, true);
-        PlayerLandingSnapshot landing = tracker.Advance(Result(true, true, 0f), 1f, PlayerLocomotionMode.Air, PlayerLocomotionMode.FastRun, true);
+        tracker.Advance(Result(false), 1f);
+        PlayerLandingSnapshot landing = tracker.Advance(Result(true, true), 1f);
 
-        Assert.That(landing.AirEntryGroundMode, Is.EqualTo(PlayerLocomotionMode.FastRun));
+        Assert.That(landing.FallDistance, Is.Zero);
         Assert.That(landing.Severity, Is.EqualTo(PlayerLandingSeverity.Lv1));
     }
 
     [Test]
     public void Reset_DiscardsCurrentAirLifecycleAndKeepsSequenceMonotonic()
     {
-        tracker.Advance(Result(false), 4f, PlayerLocomotionMode.Air, PlayerLocomotionMode.Run, true);
-        PlayerLandingSnapshot first = tracker.Advance(Result(true, true, 10f), 0f, PlayerLocomotionMode.Air, PlayerLocomotionMode.Run, true);
-        tracker.Advance(Result(false), 5f, PlayerLocomotionMode.Air, PlayerLocomotionMode.Run, true);
-        tracker.Reset(PlayerLocomotionMode.Walk);
-        tracker.Advance(Result(false), 1f, PlayerLocomotionMode.Air, PlayerLocomotionMode.Walk, true);
-        PlayerLandingSnapshot second = tracker.Advance(Result(true, true, 0f), 1f, PlayerLocomotionMode.Air, PlayerLocomotionMode.Walk, true);
+        tracker.Advance(Result(false), 4f);
+        PlayerLandingSnapshot first = tracker.Advance(Result(true, true), 0f);
+        tracker.Advance(Result(false), 5f);
+        tracker.Reset();
+        tracker.Advance(Result(false), 1f);
+        PlayerLandingSnapshot second = tracker.Advance(Result(true, true), 1f);
 
         Assert.That(first.Sequence, Is.EqualTo(1));
         Assert.That(second.Sequence, Is.EqualTo(2));
+        Assert.That(first.FallDistance, Is.EqualTo(4f).Within(0.0001f));
         Assert.That(second.FallDistance, Is.Zero);
-        Assert.That(second.AirEntryGroundMode, Is.EqualTo(PlayerLocomotionMode.Walk));
+        Assert.That(second.Severity, Is.EqualTo(PlayerLandingSeverity.Lv1));
     }
 
     [Test]
@@ -87,8 +90,8 @@ public class PlayerLandingTrackerTests
         Assert.That(errors, Is.Empty);
     }
 
-    private static PlayerMotorResult Result(bool isGrounded, bool justLanded = false, float impactSpeed = 0f)
+    private static PlayerMotorResult Result(bool isGrounded, bool justLanded = false)
     {
-        return new PlayerMotorResult(Vector3.zero, Vector3.zero, Vector3.zero, 0f, isGrounded, justLanded, impactSpeed, CollisionFlags.None);
+        return new PlayerMotorResult(Vector3.zero, Vector3.zero, Vector3.zero, 0f, isGrounded, justLanded, CollisionFlags.None);
     }
 }

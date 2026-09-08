@@ -49,7 +49,7 @@ public class PlayerSimulationDriver : MonoBehaviour
     {
         motor.EnsureInitialized();
         pendingTransition = stateController.Initialize(inputSource, actionBuffer);
-        landingTracker.Reset(stateController.TargetGroundMode);
+        landingTracker.Reset();
         animationController.InitializeManualEvaluation();
     }
     
@@ -82,9 +82,8 @@ public class PlayerSimulationDriver : MonoBehaviour
         //拿到动画数据驱动时的命令
         PlayerMotorCommand command = PlayerMotionComposer.Compose(intent, motionFrame, motor.CurrentResult, motor.Config, deltaTime, transform.forward);
         //执行动画移动
-        PlayerLocomotionMode landingSampleMode = stateController.CurrentLocomotionMode;
         PlayerMotorResult motorResult = motor.Simulate(command, deltaTime);
-        LandingSnapshot = landingTracker.Advance(motorResult, transform.position.y, landingSampleMode, stateController.TargetGroundMode, hasRawMoveInput);
+        LandingSnapshot = landingTracker.Advance(motorResult, transform.position.y);
         //设置移动事实
         stateController.SetSimulationFacts(motorResult, motionPlanner.Snapshot, LandingSnapshot);
         //在动画执行完毕后开始帧后状态切换
@@ -100,10 +99,6 @@ public class PlayerSimulationDriver : MonoBehaviour
         }
         PlayerStateTransition? presentationTransition = resultTransition ?? transition ?? pendingTransition;
         PlayerLandingPresentationKey? landingPresentation = ResolveLandingPresentation(resultTransition, LandingSnapshot);
-        if (resultTransition.HasValue && landingPresentation.HasValue && IsLandingMotion(landingPresentation.Value))
-        {
-            motionPlanner.TryBeginLandingMotion(resultTransition.Value, landingPresentation.Value, postTransitionIntent, motorResult);
-        }
         pendingTransition = null;
         motionPlanner.CommitLocomotionPhase(stateController.CurrentLocomotionMode, motorResult);
         //播放动画表现
@@ -146,14 +141,6 @@ public class PlayerSimulationDriver : MonoBehaviour
         if (!IsGroundState(resolvedTransition.CurrentStateType)) return null;
         return PlayerLandingPresentationResolver.TryResolve(snapshot, out PlayerLandingPresentationKey presentation) ? presentation : (PlayerLandingPresentationKey?)null;
     }
-    /// <summary>
-    /// 判断落地动画是否是烘焙动画
-    /// </summary>
-    private static bool IsLandingMotion(PlayerLandingPresentationKey presentation)
-    {
-        return presentation == PlayerLandingPresentationKey.LandWalk || presentation == PlayerLandingPresentationKey.LandRun || presentation == PlayerLandingPresentationKey.LandRoll;
-    }
-
     private static bool IsGroundState(Type stateType)
     {
         return stateType == typeof(PlayerIdleState) || stateType == typeof(PlayerWalkState) || stateType == typeof(PlayerRunState) || stateType == typeof(PlayerFastRunState);

@@ -157,7 +157,7 @@ public class PlayerJumpAnimationGroup
 }
 
 /// <summary>
-/// 普通落地表现资源，以及移动落地 MotionDefinition 的表现绑定。
+/// 四档普通落地表现资源。
 /// </summary>
 [Serializable]
 public class PlayerLandingAnimationGroup
@@ -166,27 +166,11 @@ public class PlayerLandingAnimationGroup
     [SerializeField] private ClipTransition land2 = new ClipTransition();
     [SerializeField] private ClipTransition land3 = new ClipTransition();
     [SerializeField] private ClipTransition land4 = new ClipTransition();
-    [SerializeField] private PlayerMotionAnimationBinding landWalk = new PlayerMotionAnimationBinding();
-    [SerializeField] private PlayerMotionAnimationBinding landRun = new PlayerMotionAnimationBinding();
-    [SerializeField] private PlayerMotionAnimationBinding landRoll = new PlayerMotionAnimationBinding();
 
     public ClipTransition Land1 => land1;
     public ClipTransition Land2 => land2;
     public ClipTransition Land3 => land3;
     public ClipTransition Land4 => land4;
-    public PlayerMotionAnimationBinding LandWalk => landWalk;
-    public PlayerMotionAnimationBinding LandRun => landRun;
-    public PlayerMotionAnimationBinding LandRoll => landRoll;
-
-    public IEnumerable<PlayerMotionAnimationBinding> MotionBindings
-    {
-        get
-        {
-            yield return landWalk;
-            yield return landRun;
-            yield return landRoll;
-        }
-    }
 
 #if UNITY_EDITOR
     public void ConfigureStandard(PlayerLandingPresentationKey presentation, AnimationClip clip, float fadeDuration)
@@ -205,21 +189,6 @@ public class PlayerLandingAnimationGroup
         transition.Speed = 1f;
     }
 
-    public void ConfigureMotion(PlayerLandingPresentationKey presentation, PlayerMotionDefinition definition, AnimationClip clip, float fadeDuration)
-    {
-        switch (presentation)
-        {
-            case PlayerLandingPresentationKey.LandWalk:
-                landWalk.Configure(definition, clip, fadeDuration);
-                break;
-            case PlayerLandingPresentationKey.LandRun:
-                landRun.Configure(definition, clip, fadeDuration);
-                break;
-            case PlayerLandingPresentationKey.LandRoll:
-                landRoll.Configure(definition, clip, fadeDuration);
-                break;
-        }
-    }
 #endif
 }
 
@@ -421,7 +390,6 @@ public class PlayerAnimationSet : ScriptableObject
         valid &= ValidateBindingGroup("Walk", walk?.MotionBindings, seenDefinitions, errors);
         valid &= ValidateBindingGroup("Run", run?.MotionBindings, seenDefinitions, errors);
         valid &= ValidateBindingGroup("Sprint", sprint?.MotionBindings, seenDefinitions, errors);
-        valid &= ValidateBindingGroup("Landing", landing?.MotionBindings, seenDefinitions, errors);
         valid &= ValidateBindingGroup("Other", other?.MotionBindings, seenDefinitions, errors);
 
         if (motionCatalog == null)
@@ -486,10 +454,6 @@ public class PlayerAnimationSet : ScriptableObject
         if (sprint?.MotionBindings != null)
         {
             foreach (PlayerMotionAnimationBinding binding in sprint.MotionBindings) yield return binding;
-        }
-        if (landing?.MotionBindings != null)
-        {
-            foreach (PlayerMotionAnimationBinding binding in landing.MotionBindings) yield return binding;
         }
         if (other?.MotionBindings != null)
         {
@@ -619,12 +583,6 @@ public class PlayerAnimationSet : ScriptableObject
         else if (locomotionMode == PlayerLocomotionMode.Run) run = group;
         else sprint = group;
         group.Loop.Configure(foot, clip, fadeDuration);
-    }
-
-    public void ConfigureLanding(PlayerLandingPresentationKey presentation, PlayerMotionDefinition definition, AnimationClip clip, float fadeDuration)
-    {
-        landing ??= new PlayerLandingAnimationGroup();
-        landing.ConfigureMotion(presentation, definition, clip, fadeDuration);
     }
 
     public void ConfigureLandingTransition(PlayerLandingPresentationKey presentation, AnimationClip clip, float fadeDuration)
