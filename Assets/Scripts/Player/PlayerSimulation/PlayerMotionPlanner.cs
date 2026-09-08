@@ -26,7 +26,7 @@ public class PlayerMotionPlanner : MonoBehaviour
     {
         if (TryResolveTargetTransitionMotion(transition, intent, out PlayerMotionDefinition definition))
         {
-            Begin(definition, intent, motorResult);
+            Begin(definition, motorResult);
             return;
         }
         PlayerMotionSnapshot motion = runtime.Snapshot;
@@ -38,7 +38,7 @@ public class PlayerMotionPlanner : MonoBehaviour
         }
         if (TryResolveSourceExitMotion(transition, out definition))
         {
-            Begin(definition, intent, motorResult);
+            Begin(definition, motorResult);
             return;
         }
         if (runtime.Snapshot.IsActive) runtime.Cancel();
@@ -70,12 +70,12 @@ public class PlayerMotionPlanner : MonoBehaviour
         Vector3 reference = motorResult.HorizontalVelocity.sqrMagnitude > 0.0001f ? motorResult.HorizontalVelocity : transform.forward;
         float signedAngle = SignedPlanarAngle(reference, intent.DesiredMoveDirection);
         if (Mathf.Abs(signedAngle) < catalog.Turn180Threshold) return;
-        if (catalog.TryGet(signedAngle < 0f ? left : right, out PlayerMotionDefinition definition)) Begin(definition, intent, motorResult);
+        if (catalog.TryGet(signedAngle < 0f ? left : right, out PlayerMotionDefinition definition)) Begin(definition, motorResult);
     }
 
-    public PlayerMotionFrame Advance(float deltaTime, PlayerGameplayIntent intent)
+    public PlayerMotionFrame Advance(float deltaTime)
     {
-        return runtime.Advance(deltaTime, intent);
+        return runtime.Advance(deltaTime);
     }
     /// <summary>
     /// 这里planner通过移动数据驱动phaseRuntime
@@ -126,14 +126,11 @@ public class PlayerMotionPlanner : MonoBehaviour
         return catalog.TryGet(turnId, out _) ? turnId : standard;
     }
 
-    private void Begin(PlayerMotionDefinition definition, PlayerGameplayIntent intent, PlayerMotorResult motorResult)
+    private void Begin(PlayerMotionDefinition definition, PlayerMotorResult motorResult)
     {
-        Vector3 desired = intent.DesiredMoveDirection.sqrMagnitude > 0.0001f ? intent.DesiredMoveDirection : transform.forward;
-        Vector3 entryVelocity = motorResult.HorizontalVelocity.sqrMagnitude > 0.0001f ? motorResult.HorizontalVelocity : transform.forward;
-        Vector3 basis = definition.BasisPolicy == PlayerMotionBasisPolicy.DesiredDirection ? desired : definition.BasisPolicy == PlayerMotionBasisPolicy.EntryVelocityDirection ? entryVelocity : transform.forward;
         PlayerFoot entryFoot = definition.ResolveEntryFoot(PhaseSnapshot);
         PlayerMotionProfile selectedProfile = definition.ResolveProfile(entryFoot);
-        runtime.Begin(definition, selectedProfile, entryFoot, ResolveEntrySource(definition, motorResult), basis, desired);
+        runtime.Begin(definition, selectedProfile, entryFoot, ResolveEntrySource(definition, motorResult), transform.forward);
     }
 
     private PlayerMotionEntrySource ResolveEntrySource(PlayerMotionDefinition definition, PlayerMotorResult motorResult)

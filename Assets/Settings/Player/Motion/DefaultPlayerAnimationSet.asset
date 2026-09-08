@@ -15,7 +15,7 @@ MonoBehaviour:
   motionCatalog: {fileID: 11400000, guid: 7e7b584da779b5e42aac77d4ec67ea6d, type: 2}
   idle:
     loop:
-      _FadeDuration: 0.5
+      _FadeDuration: 0.2
       _Speed: 1
       _Events:
         _NormalizedTimes: []
@@ -26,7 +26,7 @@ MonoBehaviour:
   walk:
     loop:
       defaultTransition:
-        _FadeDuration: 0.4
+        _FadeDuration: 0.2
         _Speed: 1
         _Events:
           _NormalizedTimes: []
@@ -35,7 +35,7 @@ MonoBehaviour:
         _Clip: {fileID: 1827226128182048838, guid: 28f94a65124f3284b8882da5e12ea584, type: 3}
         _NormalizedStartTime: NaN
       leftTransition:
-        _FadeDuration: 0.4
+        _FadeDuration: 0.2
         _Speed: 1
         _Events:
           _NormalizedTimes: []
@@ -44,7 +44,7 @@ MonoBehaviour:
         _Clip: {fileID: 1827226128182048838, guid: c2a6461822d1b2d4b925cdd407ea42b5, type: 3}
         _NormalizedStartTime: NaN
       rightTransition:
-        _FadeDuration: 0.4
+        _FadeDuration: 0.2
         _Speed: 1
         _Events:
           _NormalizedTimes: []
@@ -512,7 +512,7 @@ MonoBehaviour:
   run:
     loop:
       defaultTransition:
-        _FadeDuration: 0.4
+        _FadeDuration: 0.2
         _Speed: 1
         _Events:
           _NormalizedTimes: []
@@ -521,7 +521,7 @@ MonoBehaviour:
         _Clip: {fileID: 1827226128182048838, guid: 99e4eb5572885a74b8602df50dac4516, type: 3}
         _NormalizedStartTime: NaN
       leftTransition:
-        _FadeDuration: 0.4
+        _FadeDuration: 0.2
         _Speed: 1
         _Events:
           _NormalizedTimes: []
@@ -530,7 +530,7 @@ MonoBehaviour:
         _Clip: {fileID: 1827226128182048838, guid: 892ac20ab63595d4c8fa3c38dcf3bdaf, type: 3}
         _NormalizedStartTime: NaN
       rightTransition:
-        _FadeDuration: 0.4
+        _FadeDuration: 0.2
         _Speed: 1
         _Events:
           _NormalizedTimes: []

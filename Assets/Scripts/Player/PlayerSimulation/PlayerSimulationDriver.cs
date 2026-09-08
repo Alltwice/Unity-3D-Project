@@ -78,7 +78,7 @@ public class PlayerSimulationDriver : MonoBehaviour
         stateController.Tick(deltaTime, ref intent);
         motionPlanner.ResolveContinuousMotion(stateController.CurrentState.GetType(), intent, motor.CurrentResult);
         //依据数据真正的执行移动
-        PlayerMotionFrame motionFrame = motionPlanner.Advance(deltaTime, intent);
+        PlayerMotionFrame motionFrame = motionPlanner.Advance(deltaTime);
         //拿到动画数据驱动时的命令
         PlayerMotorCommand command = PlayerMotionComposer.Compose(intent, motionFrame, motor.CurrentResult, motor.Config, deltaTime, transform.forward);
         //执行动画移动

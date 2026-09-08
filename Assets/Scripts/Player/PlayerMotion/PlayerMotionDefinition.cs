@@ -2,23 +2,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Serialization;
 /// <summary>
-/// 最终应该怎么移动
-/// </summary>
-public enum PlayerMotionTranslationPolicy
-{
-    None = 0,
-    //速度
-    VelocityDriven = 1,
-    //使用 Motion Begin 时捕获的方向和动画移动距离
-    TravelAlongCapturedDirection = 2,
-    //保留运动轨迹
-    LocalTrajectory = 3,
-    //使用当前 GameplayIntent 方向和动画移动距离
-    TravelAlongDesiredDirection = 4,
-    //保留局部轨迹，并跟随身体的额外转向修正
-    SteeredLocalTrajectory = 5
-}
-/// <summary>
 /// 处理旋转方式
 /// </summary>
 public enum PlayerMotionRotationPolicy
@@ -29,18 +12,6 @@ public enum PlayerMotionRotationPolicy
     FaceDirection = 1,
     //使用动画旋转曲线
     ProfileYaw = 2
-}
-/// <summary>
-/// 动画轨迹移动方向对应位置
-/// </summary>
-public enum PlayerMotionBasisPolicy
-{
-    //输入意图前方
-    DesiredDirection,
-    //输入瞬间朝向位置
-    EntryVelocityDirection,
-    //进入动画瞬间角色朝向
-    EntryFacing
 }
 /// <summary>
 /// Motion 被状态机打断后，决定是否仍解析源状态的退出表现
@@ -63,9 +34,7 @@ public class PlayerMotionDefinition : ScriptableObject
     [SerializeField] private bool requiresFootProfiles;
     [SerializeField] private bool usePhaseFootSelection;
     [SerializeField, Range(0f, 1f)] private float nextPlantFootThreshold = 0.5f;
-    [SerializeField] private PlayerMotionTranslationPolicy translationPolicy;
     [SerializeField] private PlayerMotionRotationPolicy rotationPolicy;
-    [SerializeField] private PlayerMotionBasisPolicy basisPolicy;
     //希望动画完成时间
     [Min(0f)] [SerializeField] private float durationOverride;
     //移动倍率
@@ -92,9 +61,7 @@ public class PlayerMotionDefinition : ScriptableObject
     public bool RequiresFootProfiles => requiresFootProfiles;
     public bool UsePhaseFootSelection => usePhaseFootSelection;
     public float NextPlantFootThreshold => nextPlantFootThreshold;
-    public PlayerMotionTranslationPolicy TranslationPolicy => translationPolicy;
     public PlayerMotionRotationPolicy RotationPolicy => rotationPolicy;
-    public PlayerMotionBasisPolicy BasisPolicy => basisPolicy;
     //可控制动画播放时间，若没设设定使用默认的动画时长
     public float Duration => GetDuration(PlayerFoot.Unknown);
     public float TranslationScale => translationScale;
@@ -176,25 +143,18 @@ public class PlayerMotionDefinition : ScriptableObject
             valid = false;
         }
         valid &= ValidateEntryTranslationWeight(errors);
-        if (translationPolicy == PlayerMotionTranslationPolicy.SteeredLocalTrajectory)
-        {
-            if (rotationPolicy != PlayerMotionRotationPolicy.ProfileYaw || basisPolicy != PlayerMotionBasisPolicy.EntryFacing) { errors?.Add(name + ": SteeredLocalTrajectory 需要 ProfileYaw + EntryFacing。"); valid = false; }
-            valid &= ValidateSteeredTrajectoryProfile(profile, errors);
-            if (leftFootProfile != null) valid &= ValidateSteeredTrajectoryProfile(leftFootProfile, errors);
-            if (rightFootProfile != null) valid &= ValidateSteeredTrajectoryProfile(rightFootProfile, errors);
-        }
+        valid &= ValidateTrajectoryProfile(profile, errors);
+        if (leftFootProfile != null) valid &= ValidateTrajectoryProfile(leftFootProfile, errors);
+        if (rightFootProfile != null) valid &= ValidateTrajectoryProfile(rightFootProfile, errors);
         if (float.IsNaN(transitionLockEndProgress) || float.IsInfinity(transitionLockEndProgress) || transitionLockEndProgress < 0f || transitionLockEndProgress > 1f) { errors?.Add(name + ": TransitionLockEndProgress 必须是 0 到 1 的有限值。"); valid = false; }
-        if (rotationPolicy == PlayerMotionRotationPolicy.ProfileYaw && !profile.HasYaw) { errors?.Add(name + ": ProfileYaw 需要有效 Yaw channel。"); valid = false; }
-        if (translationPolicy == PlayerMotionTranslationPolicy.LocalTrajectory && !profile.HasPlanarPosition) { errors?.Add(name + ": LocalTrajectory 需要有效 XZ channel。"); valid = false; }
-        if ((translationPolicy == PlayerMotionTranslationPolicy.TravelAlongCapturedDirection || translationPolicy == PlayerMotionTranslationPolicy.TravelAlongDesiredDirection) && !profile.HasTravelDistance) { errors?.Add(name + ": TravelAlong 需要有效 Travel channel。"); valid = false; }
         return valid;
     }
 
-    private bool ValidateSteeredTrajectoryProfile(PlayerMotionProfile motionProfile, ICollection<string> errors)
+    private bool ValidateTrajectoryProfile(PlayerMotionProfile motionProfile, ICollection<string> errors)
     {
         bool valid = true;
-        if (!motionProfile.HasPlanarPosition) { errors?.Add(name + ": SteeredLocalTrajectory 的 " + motionProfile.name + " 需要有效 XZ channel。"); valid = false; }
-        if (!motionProfile.HasYaw) { errors?.Add(name + ": SteeredLocalTrajectory 的 " + motionProfile.name + " 需要有效 Yaw channel。"); valid = false; }
+        if (!motionProfile.HasPlanarPosition) { errors?.Add(name + ": " + motionProfile.name + " 需要有效 XZ channel。"); valid = false; }
+        if (!motionProfile.HasYaw) { errors?.Add(name + ": " + motionProfile.name + " 需要有效 Yaw channel。"); valid = false; }
         return valid;
     }
 
@@ -233,13 +193,11 @@ public class PlayerMotionDefinition : ScriptableObject
     /// <summary>
     /// Unity 编辑器中配置轨迹、状态锁承诺窗口和中断表现策略。
     /// </summary>
-    public void Configure(PlayerMotionProfile motionProfile, PlayerMotionTranslationPolicy translation, PlayerMotionRotationPolicy rotation, PlayerMotionBasisPolicy basis, 
+    public void Configure(PlayerMotionProfile motionProfile, PlayerMotionRotationPolicy rotation,
         float runtimeDuration, float scale, float exitHandoffStart, float exitHandoffEnd, bool presentation = true, float transitionLockEndProgress = 0f, PlayerMotionInterruptedExitPolicy interruptedExitPolicy = PlayerMotionInterruptedExitPolicy.ResolveNormalTransitionMotion, bool requireFootProfiles = false)
     {
         profile = motionProfile;
-        translationPolicy = translation;
         rotationPolicy = rotation;
-        basisPolicy = basis;
         durationOverride = runtimeDuration;
         translationScale = scale;
         entryHandoffEndProgress = 0f;

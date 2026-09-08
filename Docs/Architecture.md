@@ -235,9 +235,8 @@ PlayerMotionFrame / PlayerMotionSnapshot
 
 `PlayerMotionDefinition` 给一份 Profile 增加运行语义，主要包括：
 
-- 平移策略
+- 以进入时角色朝向为基准的 Finite Motion 轨迹
 - 旋转策略
-- Basis 选择
 - 运行时持续时间与位移倍率
 - Entry Handoff（源地面循环 → Finite Motion）与 Exit Handoff（Finite Motion → 目标 Locomotion）的区间和权重曲线
 - Transition Lock 承诺窗口
@@ -284,7 +283,7 @@ PlayerMotionDefinition
 `PlayerMotionRuntime` 演进当前已选择的 `PlayerMotionDefinition` / `PlayerMotionProfile`：
 
 - 管理 Motion instance 与 progress
-- 采样烘焙位移、Yaw
+- 以进入朝向为基准采样原始 XZ 位移、Yaw 与剩余 Yaw
 - 捕获并保留 Entry Source 的地面模式与平面速度
 - 计算 Entry / Exit Handoff 进度、位移权重与 Translation Authority
 - 暴露完成 / 取消 / Transition Lock 快照
@@ -315,7 +314,7 @@ PlayerMotorResult
 
 `PlayerMotionComposer` 是 Gameplay 常规移动与烘焙 Motion 之间的合成边界。
 
-`SteeredLocalTrajectory` 使用 `ProfileYaw + EntryFacing`：Runtime 保留原始局部轨迹位移，并通过 Frame 提供相对本次开始 Yaw 的帧前理论世界朝向。Composer 用实际朝向与理论朝向之差恢复已有修正，叠加本帧额外 Yaw 修正的一半来旋转动画位移增量；动画自身 Yaw 不重复应用，Entry Source 与目标 Locomotion 位移不参与该旋转。Composer 不保存跨帧修正状态，现有资产不自动切换此策略。
+所有 Finite Motion 都以进入时角色朝向作为局部轨迹基准。Runtime 保留原始 XZ 位移、原始 Yaw 增量、剩余 Yaw，以及相对 Motion 开始 Yaw 的帧前理论朝向。Composer 先根据旋转策略决定本帧实际旋转，再使用 `SignedAngle(理论朝向, 当前实际朝向) + (YawDelta - AuthoredYawDelta) × 0.5` 旋转本帧动画位移增量；动画自身 Yaw 不重复应用，Entry Source 与目标 Locomotion 位移不参与该修正，也不保存跨帧累计修正状态。
 
 状态层表达移动意图，Motion 提供当前特殊运动的本帧贡献，Composer 生成最终 Motor 参数：
 
@@ -323,7 +322,7 @@ PlayerMotorResult
 - Immediate Velocity Driven：优先消费 Gameplay 的平面速度覆盖与本帧有效时长
 - Velocity Driven
 - Displacement Driven
-- Face Direction
+- Face Direction（Finite Motion 在 Composer 预先计算平滑旋转；普通移动与 Dodge 仍由 Motor 执行平滑）
 - Yaw Delta
 - 垂直冲量
 
@@ -463,7 +462,7 @@ Target Loop    = EntryTargetWeight × ExitTargetWeight
 
 Dodge 完成且无原始移动输入时，Planner 启动 `DodgeToIdle`。Controller 保留 Dodge Pose，以 `FadeMode.FixedDuration` 混合到按 Motion Progress 采样的结束 Clip；Fade 时长不超过到 Exit Handoff 起点的剩余时间。Fade 期间暂停三路手动权重写入，源 State 失活或 Motion 进入 Exit / 完成时结束 Fade 并停止源 State，再恢复 Exit Pose 权重。被取消、替换或发生其他状态转换时清理该 Fade。Dodge 完成且仍有输入则进入 FastRun，直接播放目标 Loop。Walk / Run 互切也使用 FixedDuration Fade。
 
-位移侧对应由 `PlayerMotionComposer` 使用 Entry Translation Weight 与 Exit Translation Authority 组合 Entry Source、Authored Motion 和目标 Locomotion 三路位移。
+位移侧对应由 `PlayerMotionComposer` 使用 Entry Translation Weight 与 Exit Translation Authority 组合 Entry Source、修正后的 Authored Motion 和目标 Locomotion 三路位移。`PlayerMotorKinematics` 提供共享的指数平滑旋转函数，Finite Motion 的 FaceDirection 输出 `YawDelta` 后由 Motor 直接执行。
 
 ## 10. Editor 烘焙与预览工具链
 

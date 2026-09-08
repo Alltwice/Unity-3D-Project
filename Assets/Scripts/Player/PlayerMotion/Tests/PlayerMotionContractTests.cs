@@ -68,8 +68,10 @@ public class PlayerMotionContractTests
         PlayerGameplayIntent intent = PlayerGameplayIntent.Create(Vector3.forward, Vector3.forward);
         intent.LocomotionMode = PlayerLocomotionMode.Run;
         PlayerMotorResult result = MotorResult(Vector3.forward * 2f);
-        PlayerMotorCommand authored = PlayerMotionComposer.Compose(intent, new PlayerMotionFrame(definition, Vector3.forward, 0f, 0f, 0f, 0f, 1f), result, config, 0.1f, Vector3.forward);
-        PlayerMotorCommand locomotion = PlayerMotionComposer.Compose(intent, new PlayerMotionFrame(definition, Vector3.forward, 0f, 0f, 0f, 0f, 0f), result, config, 0.1f, Vector3.forward);
+        PlayerMotionFrame authoredFrame = new PlayerMotionFrame(definition, profile, PlayerFoot.Unknown, Vector3.forward, 0f, 0f, 0f, 0f, 1f, false, 1f, Vector3.zero, Vector3.forward);
+        PlayerMotionFrame locomotionFrame = new PlayerMotionFrame(definition, profile, PlayerFoot.Unknown, Vector3.forward, 0f, 0f, 0f, 0f, 0f, false, 1f, Vector3.zero, Vector3.forward);
+        PlayerMotorCommand authored = PlayerMotionComposer.Compose(intent, authoredFrame, result, config, 0.1f, Vector3.forward);
+        PlayerMotorCommand locomotion = PlayerMotionComposer.Compose(intent, locomotionFrame, result, config, 0.1f, Vector3.forward);
         Assert.That(authored.TranslationMode, Is.EqualTo(PlayerMotorTranslationMode.DisplacementDriven));
         Assert.That(authored.PlanarDisplacement.z, Is.EqualTo(1f).Within(0.0001f));
         Assert.That(locomotion.TranslationMode, Is.EqualTo(PlayerMotorTranslationMode.VelocityDriven));
@@ -83,7 +85,7 @@ public class PlayerMotionContractTests
         PlayerMovementConfig config = ScriptableObject.CreateInstance<PlayerMovementConfig>();
         PlayerGameplayIntent intent = PlayerGameplayIntent.Create(Vector3.forward, Vector3.forward);
         intent.LocomotionMode = PlayerLocomotionMode.Run;
-        PlayerMotionFrame frame = new PlayerMotionFrame(definition, profile, PlayerFoot.Left, Vector3.forward * 4f, 0f, 0f, 0f, 0.5f, 0.25f, true, 0.5f, Vector3.forward * 2f);
+        PlayerMotionFrame frame = new PlayerMotionFrame(definition, profile, PlayerFoot.Left, Vector3.forward * 4f, 0f, 0f, 0f, 0.5f, 0.25f, true, 0.5f, Vector3.forward * 2f, Vector3.forward);
         PlayerMotorCommand command = PlayerMotionComposer.Compose(intent, frame, MotorResult(Vector3.zero), config, 1f, Vector3.forward);
         float expected = 2f * 0.5f + 4f * 0.5f * 0.25f + config.Locomotion.RunSpeed * 0.5f * 0.75f;
         Assert.That(command.PlanarDisplacement.z, Is.EqualTo(expected).Within(0.0001f));
@@ -101,15 +103,17 @@ public class PlayerMotionContractTests
         PlayerMotionRuntime runtime = new PlayerMotionRuntime();
         PlayerGameplayIntent intent = PlayerGameplayIntent.Create(Vector3.forward, Vector3.forward);
         intent.LocomotionMode = PlayerLocomotionMode.Idle;
-        runtime.Begin(definition, Vector3.forward, Vector3.forward);
+        runtime.Begin(definition, Vector3.forward);
         Vector3 total = Vector3.zero;
         int guard = fps * 3;
         while (!runtime.Snapshot.JustCompleted && guard-- > 0)
         {
-            PlayerMotionFrame frame = runtime.Advance(1f / fps, intent);
+            PlayerMotionFrame frame = runtime.Advance(1f / fps);
             total += PlayerMotionComposer.Compose(intent, frame, MotorResult(Vector3.zero), config, 1f / fps, Vector3.forward).PlanarDisplacement;
         }
-        Assert.That(total.z, Is.EqualTo(profile.EvaluateTravelDistance(1f)).Within(0.0001f));
+        Vector3 expected = profile.EvaluatePlanarPosition(1f);
+        Assert.That(total.x, Is.EqualTo(expected.x).Within(0.0001f));
+        Assert.That(total.z, Is.EqualTo(expected.z).Within(0.0001f));
         Destroy(config, definition, profile);
     }
 
@@ -189,7 +193,7 @@ public class PlayerMotionContractTests
     {
         profile = CreateProfile(2f);
         PlayerMotionDefinition definition = ScriptableObject.CreateInstance<PlayerMotionDefinition>();
-        definition.Configure(profile, PlayerMotionTranslationPolicy.TravelAlongCapturedDirection, PlayerMotionRotationPolicy.FaceDirection, PlayerMotionBasisPolicy.DesiredDirection, 0f, 1f, exitStart, exitEnd, true, transitionLockEnd);
+        definition.Configure(profile, PlayerMotionRotationPolicy.FaceDirection, 0f, 1f, exitStart, exitEnd, true, transitionLockEnd);
         return definition;
     }
 

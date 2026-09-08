@@ -209,7 +209,7 @@ public sealed class PlayerLocomotionPhaseRuntimeTests
             catalog.Configure(Array.Empty<PlayerMotionCatalogEntry>(), new[] { walk, run, fastRun }, 150f);
             BoundaryProfile = CreateLoopProfile("Boundary", 1f, PlayerFoot.Left, PlayerFoot.Right);
             BoundaryDefinition = Create<PlayerMotionDefinition>();
-            BoundaryDefinition.Configure(BoundaryProfile, PlayerMotionTranslationPolicy.None, PlayerMotionRotationPolicy.KeepFacing, PlayerMotionBasisPolicy.EntryFacing, 0f, 1f, 0.8f, 1f);
+            BoundaryDefinition.Configure(BoundaryProfile, PlayerMotionRotationPolicy.KeepFacing, 0f, 1f, 0.8f, 1f);
             Runtime = new PlayerLocomotionPhaseRuntime(catalog);
         }
 

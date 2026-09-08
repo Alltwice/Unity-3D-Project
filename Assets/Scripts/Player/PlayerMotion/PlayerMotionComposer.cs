@@ -16,10 +16,9 @@ public static class PlayerMotionComposer
         //在加速度影响下每帧真实速度
         Vector3 predictedVelocity = CalculateVelocity(previousMotorResult.HorizontalVelocity, targetVelocity, intent.LocomotionMode, config.Locomotion, deltaTime);
         PlayerMotorTranslationMode translationMode = PlayerMotorTranslationMode.VelocityDriven;
-        ResolveRotation(intent, motionFrame, currentFacing, out PlayerMotorRotationMode rotationMode, out Vector3 facingDirection, out float yawDelta);
+        ResolveRotation(intent, motionFrame, currentFacing, config.Locomotion.RotationSmoothSpeed, deltaTime, out PlayerMotorRotationMode rotationMode, out Vector3 facingDirection, out float yawDelta);
         Vector3 displacement = Vector3.zero;
-        //烘焙和程序混合态时的位移信息
-        if (motionFrame.IsValid && motionFrame.Definition.TranslationPolicy != PlayerMotionTranslationPolicy.VelocityDriven)
+        if (motionFrame.IsValid)
         {
             float entryTargetWeight = motionFrame.EntryHandoffActive ? Mathf.Clamp01(motionFrame.EntryTargetTranslationWeight) : 1f;
             float exitSourceWeight = Mathf.Clamp01(motionFrame.ExitTranslationAuthority);
@@ -27,14 +26,10 @@ public static class PlayerMotionComposer
             float authoredWeight = entryTargetWeight * exitSourceWeight;
             float targetLocomotionWeight = entryTargetWeight * (1f - exitSourceWeight);
             Vector3 authoredDisplacement = motionFrame.AuthoredPlanarDisplacement;
-            if (motionFrame.Definition.TranslationPolicy == PlayerMotionTranslationPolicy.SteeredLocalTrajectory)
-            {
-                Vector3 planarFacing = Vector3.ProjectOnPlane(currentFacing, Vector3.up);
-                float existingCorrection = Vector3.SignedAngle(motionFrame.AuthoredFacingBeforeStep, planarFacing, Vector3.up);
-                float stepCorrection = yawDelta - motionFrame.AuthoredYawDelta;
-                //用帧内修正中点旋转位移增量，动画自身的 Yaw 不重复应用
-                authoredDisplacement = Quaternion.AngleAxis(existingCorrection + stepCorrection * 0.5f, Vector3.up) * authoredDisplacement;
-            }
+            Vector3 planarFacing = Vector3.ProjectOnPlane(currentFacing, Vector3.up);
+            float existingCorrection = Vector3.SignedAngle(motionFrame.AuthoredFacingBeforeStep, planarFacing, Vector3.up);
+            float stepCorrection = yawDelta - motionFrame.AuthoredYawDelta;
+            authoredDisplacement = Quaternion.AngleAxis(existingCorrection + stepCorrection * 0.5f, Vector3.up) * authoredDisplacement;
             displacement = motionFrame.EntrySourcePlanarVelocity * deltaTime * entrySourceWeight
                 + authoredDisplacement * authoredWeight
                 + predictedVelocity * deltaTime * targetLocomotionWeight;
@@ -86,9 +81,10 @@ public static class PlayerMotionComposer
     /// <summary>
     /// 处理旋转
     /// </summary>
-    private static void ResolveRotation(PlayerGameplayIntent intent, PlayerMotionFrame frame, Vector3 currentFacing, out PlayerMotorRotationMode mode, out Vector3 facingDirection, out float yawDelta)
+    private static void ResolveRotation(PlayerGameplayIntent intent, PlayerMotionFrame frame, Vector3 currentFacing, float rotationSmoothSpeed, float deltaTime, out PlayerMotorRotationMode mode, out Vector3 facingDirection, out float yawDelta)
     {
         facingDirection = intent.DesiredFacingDirection;
+        facingDirection.y = 0f;
         yawDelta = 0f;
         if (intent.LocomotionMode == PlayerLocomotionMode.HardLanding)
         {
@@ -109,7 +105,6 @@ public static class PlayerMotionComposer
             //获取本帧的理论朝向
             Vector3 facingAfterAuthored = Quaternion.AngleAxis(authoredYaw, Vector3.up) * (currentFacing.sqrMagnitude > 0.0001f ? currentFacing.normalized : Vector3.forward);
             yawDelta = authoredYaw;
-            facingDirection.y = 0f;
             if (facingDirection.sqrMagnitude > 0.0001f)
             {
                 //在动画旋转的基础上加上本帧旋转预测最终朝向
@@ -126,7 +121,16 @@ public static class PlayerMotionComposer
             mode = PlayerMotorRotationMode.YawDelta;
             return;
         }
-        //非 ProfileYaw 时，KeepFacing 不旋转；其余策略在存在目标朝向时交给 Motor 平滑朝向该目标
-        mode = policy == PlayerMotionRotationPolicy.KeepFacing ? PlayerMotorRotationMode.None : facingDirection.sqrMagnitude > 0.0001f ? PlayerMotorRotationMode.FaceDirection : PlayerMotorRotationMode.None;
+        if (policy == PlayerMotionRotationPolicy.KeepFacing || facingDirection.sqrMagnitude <= 0.0001f)
+        {
+            mode = PlayerMotorRotationMode.None;
+            return;
+        }
+        Vector3 planarCurrentFacing = Vector3.ProjectOnPlane(currentFacing, Vector3.up);
+        Quaternion currentRotation = Quaternion.LookRotation(planarCurrentFacing.sqrMagnitude > 0.0001f ? planarCurrentFacing.normalized : Vector3.forward, Vector3.up);
+        Quaternion smoothedRotation = PlayerMotorKinematics.CalculateSmoothRotation(currentRotation, facingDirection, rotationSmoothSpeed, deltaTime);
+        Vector3 smoothedFacing = Vector3.ProjectOnPlane(smoothedRotation * Vector3.forward, Vector3.up);
+        yawDelta = Vector3.SignedAngle(planarCurrentFacing, smoothedFacing, Vector3.up);
+        mode = PlayerMotorRotationMode.YawDelta;
     }
 }

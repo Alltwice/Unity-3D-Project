@@ -277,9 +277,8 @@ Motion 语义总索引。
 字段 / 策略：
 
 - Profile / LeftFootProfile / RightFootProfile
-- Translation Policy
+- EntryFacing 轨迹基准
 - Rotation Policy
-- Basis Policy
 - Duration / Translation Scale
 - Entry Handoff end progress 与 Target Translation Weight 曲线
 - Exit Handoff start/end progress 与 Translation Authority 曲线
@@ -326,7 +325,7 @@ Profile 由 Editor 工具生成和维护；Gameplay Runtime 消费烘焙结果�
 
 - Begin / Advance / Cancel
 - Progress / InstanceId
-- 烘焙位移、Yaw
+- 以进入朝向为基准采样原始 XZ 位移、Yaw 与剩余 Yaw
 - Entry Source 捕获与 Entry Handoff 进度/目标位移权重
 - Exit Handoff 进度与 Translation Authority
 - Completion / Cancellation：结束帧保留快照引用，下一次 BeginFrame 清理
@@ -334,11 +333,11 @@ Profile 由 Editor 工具生成和维护；Gameplay Runtime 消费烘焙结果�
 
 ### `PlayerMotionComposer.cs`
 
-`SteeredLocalTrajectory = 5` 由 `PlayerMotionDefinition` 配置并校验 `ProfileYaw + EntryFacing` 及主/左右脚 Profile 的 XZ、Yaw 数据。`PlayerMotionRuntime` 记录开始 Yaw，并在 `PlayerMotionFrame.AuthoredFacingBeforeStep` 提供帧前理论世界朝向；Composer 先解析旋转，再用已有朝向偏差与本帧额外修正的中点旋转动画位移项，之后进入原有三路 Handoff 混合。原有位移策略和资产选择保持不变。
+所有 Finite Motion 统一使用进入时角色朝向作为轨迹基准，并校验主/左右脚 Profile 的 XZ、Yaw 数据。`PlayerMotionRuntime` 记录开始 Yaw，在 `PlayerMotionFrame.AuthoredFacingBeforeStep` 提供帧前理论世界朝向；Composer 先决定实际旋转，再按已有朝向偏差与 `(YawDelta - AuthoredYawDelta) × 0.5` 的中点修正旋转动画位移，之后进入原有三路 Handoff 混合。Entry Source 与目标 Locomotion 位移不参与该旋转。
 
 将 `PlayerGameplayIntent + PlayerMotionFrame + previous PlayerMotorResult` 合成为最终 `PlayerMotorCommand`，其输出只流向 `PlayerMotor`，不直接流向 `PlayerAnimationSet`。
 
-优先处理 Intent 的平面速度覆盖，生成 `ImmediateVelocityDriven` 命令（含有效时长）；该分支用于 Dodge。当 Motion 使用烘焙位移时，Composer 按 Entry Source 速度、Authored Motion 位移和目标 Locomotion 预测速度的统一三路权重合成平面位移。
+优先处理 Intent 的平面速度覆盖，生成 `ImmediateVelocityDriven` 命令（含有效时长）；该分支用于 Dodge。当 Motion 使用烘焙位移时，Composer 按 Entry Source 速度、修正后的 Authored Motion 位移和目标 Locomotion 预测速度的统一三路权重合成平面位移。
 
 ### Foot / Phase
 
@@ -378,6 +377,7 @@ Profile 由 Editor 工具生成和维护；Gameplay Runtime 消费烘焙结果�
 - CharacterController.Move
 - Ground Snap
 - FaceDirection / YawDelta
+- `PlayerMotorKinematics` 提供普通移动、Dodge 与 Finite Motion 共用的指数平滑旋转计算
 - 真实移动结果计算
 
 当前不认识具体 Gameplay State 或动画资源。
@@ -498,7 +498,7 @@ Runtime 当前不依赖这些 Editor 类型。
 
 | 文件 | 主要覆盖范围 |
 |---|---|
-| `PlayerMotionRuntimeTests.cs` | Motion 生命周期、帧率无关性、取消/替换、Entry Source、方向与 Yaw |
+| `PlayerMotionRuntimeTests.cs` | Motion 生命周期、帧率无关性、取消/替换、Entry Source、EntryFacing 轨迹与原始 Yaw |
 | `PlayerMotionContractTests.cs` | Definition、Profile、Composer 数值边界、三路位移权重与默认 Catalog 合法性 |
 | `PlayerLocomotionPhaseRuntimeTests.cs` | Phase 推进、Entry/Exit Handoff、循环暂停、恢复与必要 Cycle 资产契约 |
 | `PlayerLandingTrackerTests.cs` | 空中生命周期、严重度、一次性 Snapshot 与 Reset |
