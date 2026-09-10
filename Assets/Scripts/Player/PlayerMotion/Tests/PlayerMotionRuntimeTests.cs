@@ -183,15 +183,19 @@ public class PlayerMotionRuntimeTests
         Assert.That(fixture.Runtime.Snapshot.SourcePoseWeight, Is.LessThan(after.SourcePoseWeight));
     }
 
-    [Test]
-    public void HandoffCrossingConsumesOnlyRemainingFrameTime()
+    [TestCase(1f)]
+    [TestCase(1.1f)]
+    [TestCase(1.4333334f)]
+    [TestCase(1.7666668f)]
+    [TestCase(1.9666668f)]
+    public void HandoffCrossingConsumesOnlyRemainingFrameTime(float motionDuration)
     {
-        using HandoffFixture fixture = new HandoffFixture();
-        var steps = fixture.Runtime.Advance(0.8f, default, Vector3.forward, PlayerFoot.Unknown);
+        using HandoffFixture fixture = new HandoffFixture(motionDuration: motionDuration);
+        var steps = fixture.Runtime.Advance(0.7f * motionDuration + 0.1f, default, Vector3.forward, PlayerFoot.Unknown);
         Assert.That(fixture.Runtime.Snapshot.Target.ElapsedTime, Is.EqualTo(0.1f).Within(0.0001f));
         float totalTime = 0f;
         foreach (PlayerHandoffStep step in steps) totalTime += step.DeltaTime;
-        Assert.That(totalTime, Is.EqualTo(0.8f).Within(0.0001f));
+        Assert.That(totalTime, Is.EqualTo(0.7f * motionDuration + 0.1f).Within(0.0001f));
         fixture.Runtime.Advance(0.3f, default, Vector3.forward, PlayerFoot.Unknown);
         Assert.That(fixture.Runtime.Snapshot.IsActive, Is.False);
         Assert.That(fixture.Runtime.Snapshot.Target.ElapsedTime, Is.EqualTo(0.4f).Within(0.0001f));
@@ -233,11 +237,12 @@ public class PlayerMotionRuntimeTests
         public PlayerHandoffRuntime Runtime;
         public PlayerMotionNodeKey End = PlayerMotionNodeKey.ForMotion(PlayerMotionId.RunToIdle);
         private Object[] owned;
-        public HandoffFixture(float duration = 0.3f)
+        public HandoffFixture(float duration = 0.3f, float motionDuration = 1f)
         {
             var start = PlayerMotionNodeKey.ForMotion(PlayerMotionId.IdleToRun);
             var loop = PlayerMotionNodeKey.ForLoop(PlayerLocomotionMode.Run);
             var definition = CreateDefinition(out var profile);
+            definition.Configure(profile, PlayerMotionTranslationPolicy.TravelAlongCapturedDirection, PlayerMotionRotationPolicy.FaceDirection, PlayerMotionBasisPolicy.DesiredDirection, motionDuration, 1f);
             var catalog = ScriptableObject.CreateInstance<PlayerMotionCatalog>();
             catalog.Configure(new[] { new PlayerMotionCatalogEntry(PlayerMotionId.IdleToRun, definition), new PlayerMotionCatalogEntry(PlayerMotionId.RunToIdle, definition) }, 150f);
             var progress = ScriptableObject.CreateInstance<PlayerHandoffDefinition>();

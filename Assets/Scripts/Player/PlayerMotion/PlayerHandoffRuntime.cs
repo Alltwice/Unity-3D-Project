@@ -156,13 +156,15 @@ public class PlayerHandoffRuntime
     {
         steps.Clear();
         float remaining = Mathf.Max(0f, deltaTime);
+        bool reachedTrigger = false;
         while (target != null)
         {
             PlayerHandoffDefinition successor = target.Key.IsMotion && !target.SuccessorConsumed ? catalog.GetSuccessor(target.Key) : null;
             //检查距离事件触发点的时间
             float untilTrigger = successor == null ? float.PositiveInfinity : Mathf.Max(0f, successor.SourceTriggerProgress * target.Duration - target.Elapsed);
-            if (untilTrigger <= 0f)
+            if (reachedTrigger || untilTrigger <= 0f)
             {
+                reachedTrigger = false;
                 //避免同一个实例反复触发
                 target.SuccessorConsumed = true;
                 if (source != null && source.Key.Equals(successor.Target))
@@ -184,17 +186,22 @@ public class PlayerHandoffRuntime
             }
             if (remaining <= 0f) break;
             float step = Mathf.Min(remaining, untilTrigger);
-            if (source != null) step = Mathf.Min(step, duration - elapsed);
+            float untilBlendEnd = source == null ? float.PositiveInfinity : Mathf.Max(0f, duration - elapsed);
+            step = Mathf.Min(step, untilBlendEnd);
+            //直接消费本段选中的边界，避免浮点累加不再推进时反复采样
+            reachedTrigger = successor != null && step >= untilTrigger;
+            bool reachedBlendEnd = source != null && step >= untilBlendEnd;
             float startWeight = MoveWeight;
             //两端采样，但只有目标接收输入
             PlayerMotionFrame a = AdvanceNode(source, step, default);
             if (source != null && a.IsValid && a.Definition.TranslationPolicy == PlayerMotionTranslationPolicy.SteeredLocalTrajectory)
                 a = new PlayerMotionFrame(a.Definition, a.Profile, a.EntryLastPlantFoot, source.SourceCorrection * a.AuthoredPlanarDisplacement, a.AuthoredYawDelta, a.RemainingAuthoredYaw, a.PreviousProgress, a.CurrentProgress, a.AuthoredFacingBeforeStep);
             PlayerMotionFrame b = AdvanceNode(target, step, intent);
-            elapsed += step;
+            if (reachedTrigger) target.Elapsed = successor.SourceTriggerProgress * target.Duration;
+            elapsed = reachedBlendEnd ? duration : elapsed + step;
             steps.Add(new PlayerHandoffStep { DeltaTime = step, Source = a, Target = b, HasSource = source != null, SourceIsMotion = source != null && source.Key.IsMotion, TargetIsMotion = target.Key.IsMotion, SourceVelocity = source == null ? Vector3.zero : source.Velocity, SourceWeight = (startWeight + MoveWeight) * 0.5f });
             remaining = Mathf.Max(0f, remaining - step);
-            if (source != null && elapsed >= duration) source = null;
+            if (reachedBlendEnd) source = null;
         }
         return steps;
     }
