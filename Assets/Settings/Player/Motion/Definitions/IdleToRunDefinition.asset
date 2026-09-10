@@ -18,9 +18,7 @@ MonoBehaviour:
   requiresFootProfiles: 1
   usePhaseFootSelection: 0
   nextPlantFootThreshold: 0.5
-  translationPolicy: 4
   rotationPolicy: 1
-  basisPolicy: 0
   durationOverride: 0
   translationScale: 1
   transitionLockEndProgress: 0

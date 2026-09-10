@@ -144,10 +144,18 @@ public readonly struct PlayerMotorResult
 }
 
 /// <summary>
-/// 通过位移计算速度，并非单例设计，静态工具
+/// 提供 Motor 平移速度与旋转的共享运动学计算
 /// </summary>
 public static class PlayerMotorKinematics
 {
+    public static Quaternion CalculateSmoothRotation(Quaternion currentRotation, Vector3 targetFacing, float rotationSmoothSpeed, float deltaTime)
+    {
+        targetFacing.y = 0f;
+        Quaternion targetRotation = Quaternion.LookRotation(targetFacing.normalized, Vector3.up);
+        float t = 1f - Mathf.Exp(-rotationSmoothSpeed * Mathf.Max(0f, deltaTime));
+        return Quaternion.Slerp(currentRotation, targetRotation, t);
+    }
+
     public static Vector3 CalculateActualPlanarVelocity(Vector3 actualDisplacement, float deltaTime)
     {
         actualDisplacement.y = 0f;

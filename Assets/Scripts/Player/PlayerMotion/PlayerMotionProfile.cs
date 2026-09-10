@@ -98,6 +98,7 @@ public class PlayerMotionProfile : ScriptableObject
     public float EvaluateYaw(float progress) => Evaluate(cumulativeYaw, progress);
 
     /// <summary>
+    /// <summary>
     /// 通过动画时间查找最近的脚步落点
     /// </summary>
     public PlayerFoot ResolveLastPlantFoot(float time, PlayerFoot fallback)
