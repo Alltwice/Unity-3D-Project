@@ -8,22 +8,19 @@ public class PlayerMotionContractTests
     [Test]
     public void HandoffResolvesDurationAndWeightEndpoints()
     {
-        PlayerHandoffDefinition relation = ScriptableObject.CreateInstance<PlayerHandoffDefinition>();
-        relation.Configure(PlayerMotionNodeKey.ForLoop(PlayerLocomotionMode.Run), PlayerMotionNodeKey.ForMotion(PlayerMotionId.RunToIdle), PlayerHandoffTriggerMode.Request, 0f, PlayerHandoffDurationMode.TargetMotionRatio, 0.2f, AnimationCurve.Linear(0f, 0f, 1f, 1f), AnimationCurve.Linear(0f, 0f, 1f, 1f));
-        Assert.That(relation.ResolveDuration(0f, 2f), Is.EqualTo(0.4f).Within(0.0001f));
-        Assert.That(relation.EvaluateTranslation(0f), Is.Zero);
-        Assert.That(relation.EvaluateTranslation(1f), Is.EqualTo(1f));
-        Destroy(relation);
+        PlayerHandoffBlendSettings blend = new PlayerHandoffBlendSettings(PlayerHandoffDurationMode.TargetMotionRatio, 0.2f, AnimationCurve.Linear(0f, 0f, 1f, 1f), AnimationCurve.Linear(0f, 0f, 1f, 1f));
+        Assert.That(blend.ResolveDuration(0f, 2f), Is.EqualTo(0.4f).Within(0.0001f));
+        Assert.That(blend.EvaluateTranslation(0f), Is.Zero);
+        Assert.That(blend.EvaluateTranslation(1f), Is.EqualTo(1f));
     }
 
     [Test]
     public void HandoffRejectsLoopProgressClock()
     {
-        PlayerHandoffDefinition relation = ScriptableObject.CreateInstance<PlayerHandoffDefinition>();
-        relation.Configure(PlayerMotionNodeKey.ForLoop(PlayerLocomotionMode.Run), PlayerMotionNodeKey.ForMotion(PlayerMotionId.RunToIdle), PlayerHandoffTriggerMode.SourceProgress, 0.7f, PlayerHandoffDurationMode.SourceMotionRatio, 0.2f, AnimationCurve.Linear(0f, 0f, 1f, 1f), AnimationCurve.Linear(0f, 0f, 1f, 1f));
+        PlayerHandoffSuccessorSettings successor = new PlayerHandoffSuccessorSettings();
+        successor.Configure(true, PlayerMotionNodeKey.ForMotion(PlayerMotionId.RunToIdle), 0.7f, new PlayerHandoffBlendSettings(PlayerHandoffDurationMode.SourceMotionRatio, 0.2f, AnimationCurve.Linear(0f, 0f, 1f, 1f), AnimationCurve.Linear(0f, 0f, 1f, 1f)));
         List<string> errors = new List<string>();
-        Assert.That(relation.Validate(errors), Is.False);
-        Destroy(relation);
+        Assert.That(successor.Validate(PlayerMotionNodeKey.ForLoop(PlayerLocomotionMode.Run), errors, "Successor"), Is.False);
     }
 
     [Test]

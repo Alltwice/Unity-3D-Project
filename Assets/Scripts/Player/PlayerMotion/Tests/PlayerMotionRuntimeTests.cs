@@ -85,12 +85,15 @@ public class PlayerMotionRuntimeTests
     {
         PlayerMotionDefinition definition = CreateDefinition(out PlayerMotionProfile profile);
         PlayerMotionCatalog catalog = ScriptableObject.CreateInstance<PlayerMotionCatalog>();
-        PlayerHandoffDefinition relation = ScriptableObject.CreateInstance<PlayerHandoffDefinition>();
+        PlayerMotionProfile loopProfile = CreateProfile(1f);
+        PlayerLocomotionCycleDefinition cycle = new PlayerLocomotionCycleDefinition();
         var loop = PlayerMotionNodeKey.ForLoop(PlayerLocomotionMode.Run);
         var edge = PlayerMotionNodeKey.ForMotion(PlayerMotionId.RunToIdle);
-        relation.Configure(loop, edge, PlayerHandoffTriggerMode.Request, 0f, PlayerHandoffDurationMode.Seconds, 0.2f, AnimationCurve.Linear(0f, 0f, 1f, 1f), AnimationCurve.Linear(0f, 0f, 1f, 1f));
-        catalog.Configure(new[] { new PlayerMotionCatalogEntry(PlayerMotionId.RunToIdle, definition) }, 150f);
-        catalog.ConfigureHandoffs(new[] { relation });
+        cycle.Configure(PlayerLocomotionMode.Run, loopProfile, loopProfile, loopProfile);
+        PlayerHandoffEntrySettings entry = new PlayerHandoffEntrySettings();
+        entry.Configure(true, new PlayerHandoffBlendSettings(PlayerHandoffDurationMode.Seconds, 0.2f, AnimationCurve.Linear(0f, 0f, 1f, 1f), AnimationCurve.Linear(0f, 0f, 1f, 1f)), new PlayerHandoffSourceOverride[0]);
+        definition.ConfigureHandoffEntry(entry);
+        catalog.Configure(new[] { new PlayerMotionCatalogEntry(PlayerMotionId.RunToIdle, definition) }, new[] { cycle }, 150f);
         PlayerHandoffRuntime runtime = new PlayerHandoffRuntime(catalog);
         runtime.SetImmediate(loop, PlayerFoot.Unknown, Vector3.forward, Vector3.forward, Vector3.forward * 4f);
         runtime.Request(edge, PlayerFoot.Unknown, Vector3.forward, Vector3.forward, Vector3.forward * 4f);
@@ -99,7 +102,7 @@ public class PlayerMotionRuntimeTests
         Assert.That(steps[0].SourceVelocity, Is.EqualTo(Vector3.forward * 4f));
         runtime.Advance(0.1f, default, Vector3.forward, PlayerFoot.Unknown);
         Assert.That(runtime.Snapshot.IsActive, Is.False);
-        Destroy(definition, profile, relation, catalog);
+        Destroy(definition, profile, loopProfile, catalog);
     }
 
     [Test]
@@ -241,21 +244,31 @@ public class PlayerMotionRuntimeTests
         {
             var start = PlayerMotionNodeKey.ForMotion(PlayerMotionId.IdleToRun);
             var loop = PlayerMotionNodeKey.ForLoop(PlayerLocomotionMode.Run);
-            var definition = CreateDefinition(out var profile);
-            definition.Configure(profile, PlayerMotionTranslationPolicy.TravelAlongCapturedDirection, PlayerMotionRotationPolicy.FaceDirection, PlayerMotionBasisPolicy.DesiredDirection, motionDuration, 1f);
+            var startDefinition = CreateDefinition(out var startProfile);
+            var endDefinition = CreateDefinition(out var endProfile);
+            startDefinition.Configure(startProfile, PlayerMotionTranslationPolicy.TravelAlongCapturedDirection, PlayerMotionRotationPolicy.FaceDirection, PlayerMotionBasisPolicy.DesiredDirection, motionDuration, 1f);
+            PlayerMotionProfile loopProfile = CreateProfile(1f);
+            PlayerLocomotionCycleDefinition cycle = new PlayerLocomotionCycleDefinition();
+            cycle.Configure(PlayerLocomotionMode.Run, loopProfile, loopProfile, loopProfile);
             var catalog = ScriptableObject.CreateInstance<PlayerMotionCatalog>();
-            catalog.Configure(new[] { new PlayerMotionCatalogEntry(PlayerMotionId.IdleToRun, definition), new PlayerMotionCatalogEntry(PlayerMotionId.RunToIdle, definition) }, 150f);
-            var progress = ScriptableObject.CreateInstance<PlayerHandoffDefinition>();
-            var request = ScriptableObject.CreateInstance<PlayerHandoffDefinition>();
-            var reverse = ScriptableObject.CreateInstance<PlayerHandoffDefinition>();
+            catalog.Configure(new[] { new PlayerMotionCatalogEntry(PlayerMotionId.IdleToRun, startDefinition), new PlayerMotionCatalogEntry(PlayerMotionId.RunToIdle, endDefinition) }, new[] { cycle }, 150f);
             var linear = AnimationCurve.Linear(0f, 0f, 1f, 1f);
-            progress.Configure(start, loop, PlayerHandoffTriggerMode.SourceProgress, 0.7f, PlayerHandoffDurationMode.Seconds, duration, AnimationCurve.EaseInOut(0f, 0f, 1f, 1f), linear);
-            request.Configure(start, End, PlayerHandoffTriggerMode.Request, 0f, PlayerHandoffDurationMode.Seconds, 0.4f, linear, linear);
-            reverse.Configure(loop, start, PlayerHandoffTriggerMode.Request, 0f, PlayerHandoffDurationMode.Seconds, 0.2f, linear, linear);
-            catalog.ConfigureHandoffs(new[] { progress, request, reverse });
+            PlayerHandoffBlendSettings progressBlend = new PlayerHandoffBlendSettings(PlayerHandoffDurationMode.Seconds, duration, AnimationCurve.EaseInOut(0f, 0f, 1f, 1f), linear);
+            PlayerHandoffSuccessorSettings successor = new PlayerHandoffSuccessorSettings();
+            successor.Configure(true, loop, 0.7f, progressBlend);
+            startDefinition.ConfigureDefaultSuccessor(successor);
+            PlayerHandoffEntrySettings endEntry = new PlayerHandoffEntrySettings();
+            endEntry.Configure(true, new PlayerHandoffBlendSettings(PlayerHandoffDurationMode.Seconds, 0.4f, linear, linear), new PlayerHandoffSourceOverride[0]);
+            endDefinition.ConfigureHandoffEntry(endEntry);
+            PlayerHandoffEntrySettings startEntry = new PlayerHandoffEntrySettings();
+            startEntry.Configure(true, new PlayerHandoffBlendSettings(PlayerHandoffDurationMode.Seconds, 0.2f, linear, linear), new PlayerHandoffSourceOverride[0]);
+            startDefinition.ConfigureHandoffEntry(startEntry);
+            PlayerHandoffEntrySettings loopEntry = new PlayerHandoffEntrySettings();
+            loopEntry.Configure(false, PlayerHandoffBlendSettings.Default(), new PlayerHandoffSourceOverride[0]);
+            catalog.ConfigureLoopHandoffEntries(new[] { new PlayerLocomotionHandoffEntry(PlayerLocomotionMode.Run, loopEntry) });
             Runtime = new PlayerHandoffRuntime(catalog);
             Runtime.SetImmediate(start, PlayerFoot.Unknown, Vector3.forward, Vector3.forward, Vector3.zero);
-            owned = new Object[] { definition, profile, catalog, progress, request, reverse };
+            owned = new Object[] { startDefinition, startProfile, endDefinition, endProfile, loopProfile, catalog };
         }
         public void Dispose() => Destroy(owned);
     }

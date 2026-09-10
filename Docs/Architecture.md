@@ -1,7 +1,7 @@
 # Architecture
 
 > 本文记录项目当前较稳定的职责边界、依赖方向和核心运行流  
-> 最后核对的运行时代码基线：当前工作树（2026-09-08，包含未提交的落地简化改动）
+> 最后核对的运行时代码基线：当前工作树（2026-09-10，包含本次 Handoff 配置归并）
 
 ## 1. 当前架构概览
 
@@ -239,7 +239,7 @@ PlayerMotionFrame / PlayerMotionSnapshot
 - 旋转策略
 - Basis 选择
 - 运行时持续时间与位移倍率
-- Motion 本体不包含混合区间；交接由 Catalog 中的 Handoff 关系定义
+- Motion 本体不包含混合区间；进入混合与默认后继由节点配置保存
 - Transition Lock 承诺窗口
 - 被打断后的退出策略
 - 是否按 Foot Phase 选择左右脚 Profile
@@ -258,6 +258,8 @@ PlayerMotionDefinition
 ```
 
 它同时保存 Walk / Run / FastRun 的 `PlayerLocomotionCycleDefinition`。
+
+Catalog 还按 `LocomotionMode` 保存 Idle、Walk、Run、FastRun 的 Loop 进入配置，并提供统一的 `ResolveRequest(source, target)` 与 `TryGetSuccessor(source)` 解析接口。Motion 的进入配置和默认后继内嵌在对应 `PlayerMotionDefinition`；配置解析结果包含最终混合参数和配置来源标识。
 
 ### PlayerMotionPlanner
 
@@ -281,11 +283,11 @@ PlayerMotionDefinition
 
 ### 统一 Handoff
 
-`PlayerHandoffDefinition.cs` 定义节点标识、触发模式、时长模式和关系资源。请求触发立即建立目标；源进度触发根据当前 Motion 的默认后继阈值开始。时长在触发时按实际 Profile 换算为秒。
+`PlayerMotionNodeKey.cs` 定义 Loop / Motion 节点标识，`PlayerHandoffSettings.cs` 定义进入配置、来源覆盖、默认后继、时长模式和解析结果。Request 先由 Catalog 找到目标节点进入配置，再按精确来源覆盖或目标默认进入参数解析；源进度触发读取来源 Motion 的默认后继。时长在交接开始时按实际两端 Profile 换算为秒。
 
 `PlayerHandoffRuntime.cs` 持有至多两个 Motion / Loop 节点，按触发点和混合完成点分段推进，产出 `PlayerHandoffStep` 与 `PlayerHandoffSnapshot`。来源不再接收输入方向或发起默认后继；目标提供 Gameplay Motion 事实。已消费的默认后继在返回来源时不再次触发。
 
-Catalog 对关系引用、重复关系和默认后继歧义进行校验。来源与目标各自保留采样状态；同一资源可以创建不同节点实例。
+Catalog 对节点配置、来源覆盖、目标存在性和默认后继目标进行校验。SourceMotionRatio 不允许放在可能来自 Loop 的默认进入配置中；TargetMotionRatio 只允许 Motion 目标。来源与目标各自保留采样状态；同一资源可以创建不同节点实例。
 
 ### PlayerMotionRuntime
 
@@ -338,9 +340,11 @@ PlayerMotorResult
 统一 Handoff 的跨层数据流：
 
 ```text
-Planner（请求 / 默认后继）→ HandoffRuntime（唯一混合计时、至多两个节点）
-  ├→ 双端 MotionFrame → Composer → Motor
-  └→ HandoffSnapshot → Phase / AnimationController
+Planner（已选定的请求目标）→ HandoffRuntime
+  ├→ Catalog.ResolveRequest / TryGetSuccessor（节点配置解析）
+  └→ 唯一混合计时、至多两个节点
+       ├→ 双端 MotionFrame → Composer → Motor
+       └→ HandoffSnapshot → Phase / AnimationController
 ```
 
 Planner、HandoffRuntime、MotionRuntime 与 Composer 不持有 Animancer State 或 AnimationClip。
@@ -450,7 +454,7 @@ PlayerLocomotionPhaseSnapshot
 
 Controller 按 Handoff 节点实例创建独立 Animancer State，即使 Clip 相同也不共用采样时间。每帧从快照读取两端姿态权重；旧目标被替换或源淡出完成后销毁对应 State。Controller 不推进地面混合时钟。
 
-A→B 混合中请求 C 时，Runtime 保留 A 的采样进度及当前姿态/平移权重，立即释放 B，按 A→C 关系重新计时。源权重为捕获权重乘 `1-Curve(u)`，目标补足到 1；旧目标的姿态与速度贡献被立即替换。请求回到来源时交换两端，复用来源实例恢复权重。
+A→B 混合中请求 C 时，Runtime 保留 A 的采样进度及当前姿态/平移权重，立即释放 B，按 Catalog 对 C 的目标进入配置重新计时。源权重为捕获权重乘 `1-Curve(u)`，目标补足到 1；旧目标的姿态与速度贡献被立即替换。请求回到来源时交换两端，复用来源实例恢复权重。
 
 DodgeToIdle 入口仍保留独立 FixedDuration Fade；开始向 Idle 交接时结束该 Fade，后续使用统一 Handoff。Jump、Landing 和 Dodge 本体仍走独立表现路径。
 
@@ -536,15 +540,15 @@ Assets/Settings/Player/Motion/
 职责分别是：
 
 - `PlayerMovementConfig`：常规 Locomotion、Motor Physics、Landing 等 Gameplay/Physics 参数
-- `PlayerMotionCatalog`：MotionId → Definition 与 Locomotion Cycle 索引
-- `PlayerMotionDefinition`：Motion 运行策略
+- `PlayerMotionCatalog`：MotionId → Definition、Locomotion Cycle 索引与 Loop 进入配置，并提供 Handoff 解析
+- `PlayerMotionDefinition`：Motion 运行策略、进入混合配置与默认后继
 - `PlayerMotionProfile`：烘焙运动 / Foot Motion Channel / Foot Marker 数据
 - `PlayerAnimationSet`：运行语义 → 具体动画资源
 - `PlayerFootCalibration`：Foot Marker / 烘焙相关角色校准数据
 
 `Assets/Prefabs/Player.prefab` 是当前 Player 组件装配和序列化引用的重要 Source of Truth。
 
-当前默认 Catalog 保存 Motion、Walk / Run / FastRun Cycle 和显式 Handoff 关系。关系资产位于 `Assets/Settings/Player/Motion/Handoffs/`，包含请求关系及 Motion→Loop 默认后继。
+当前默认 Catalog 保存 Motion、Walk / Run / FastRun Cycle 和 Idle / Walk / Run / FastRun Loop 进入配置；每个 Motion Definition 保存自己的进入混合配置、精确来源覆盖和默认后继。旧 Handoff 关系资产及 Catalog 关系列表已迁移并删除，迁移结果记录在 `Docs/HandoffMigrationReport.md`。
 
 `Assets/Settings/Player/DefaultPlayerDodgeConfig.asset` 保存 Dodge 参数，当前默认 Duration 为 0.3 秒、Speed 为 12、Cooldown 为 0.35 秒。进入 Stop 的关系保留原有平滑姿态曲线。
 

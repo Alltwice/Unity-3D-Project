@@ -64,7 +64,7 @@ public class PlayerHandoffRuntime
     private PlayerMotionCatalog catalog;
     private Node source;
     private Node target;
-    private PlayerHandoffDefinition relation;
+    private PlayerHandoffResolution resolution;
     private ulong sequence;
     //交接时钟
     private float elapsed;
@@ -75,8 +75,8 @@ public class PlayerHandoffRuntime
     public PlayerHandoffRuntime(PlayerMotionCatalog motionCatalog) { catalog = motionCatalog; }
     private float Progress => duration > 0f ? Mathf.Clamp01(elapsed / duration) : 1f;
     //记录源权重
-    private float PoseWeight => source == null ? 0f : initialPose * (1f - relation.EvaluatePose(Progress));
-    private float MoveWeight => source == null ? 0f : initialTranslation * (1f - relation.EvaluateTranslation(Progress));
+    private float PoseWeight => source == null ? 0f : initialPose * (1f - resolution.Blend.EvaluatePose(Progress));
+    private float MoveWeight => source == null ? 0f : initialTranslation * (1f - resolution.Blend.EvaluateTranslation(Progress));
     public PlayerHandoffSnapshot Snapshot => new PlayerHandoffSnapshot { HasTarget = target != null, IsActive = source != null, Source = source == null ? default : source.Snapshot, Target = target == null ? default : target.Snapshot, SourcePoseWeight = PoseWeight, SourceTranslationWeight = MoveWeight };
     public PlayerMotionSnapshot MotionSnapshot => target == null ? default : target.Snapshot.Motion;
     public void CommitPhase(PlayerMotorResult result)
@@ -89,7 +89,7 @@ public class PlayerHandoffRuntime
         source?.Motion?.BeginFrame(true);
         target?.Motion?.BeginFrame(true);
     }
-    public void Clear() { source = null; target = null; relation = null; steps.Clear(); }
+    public void Clear() { source = null; target = null; resolution = default; steps.Clear(); }
     public void SetImmediate(PlayerMotionNodeKey key, PlayerFoot foot, Vector3 facing, Vector3 desired, Vector3 velocity)
     {
         Clear();
@@ -109,28 +109,35 @@ public class PlayerHandoffRuntime
         if (retained.Key.Equals(key))
         {
             // 反向交接复用原来源，以旧目标作为淡出端
-            PlayerHandoffDefinition reverse = catalog.GetHandoff(target.Key, key, PlayerHandoffTriggerMode.Request);
+            PlayerHandoffResolution reverse = ResolveRequest(target.Key, key);
             source = target;
             CaptureSourceFacing(source, facing);
             target = retained;
             StartBlend(reverse, 1f - pose, 1f - move);
             return;
         }
-        PlayerHandoffDefinition next = catalog.GetHandoff(retained.Key, key, PlayerHandoffTriggerMode.Request);
+        PlayerHandoffResolution next = ResolveRequest(retained.Key, key);
         if (source == null) retained.Velocity = Vector3.ProjectOnPlane(velocity, Vector3.up);
         if (source == null) CaptureSourceFacing(retained, facing);
         source = retained;
         target = CreateNode(key, foot, facing, desired, velocity);
         StartBlend(next, pose, move);
     }
-    private void StartBlend(PlayerHandoffDefinition next, float pose, float move)
+    private void StartBlend(PlayerHandoffResolution next, float pose, float move)
     {
-        relation = next;
+        resolution = next;
         initialPose = pose;
         initialTranslation = move;
         elapsed = 0f;
-        duration = next.ResolveDuration(source.Duration, target.Duration);
+        duration = next.Blend.ResolveDuration(source.Duration, target.Duration);
         if (duration <= 0f) source = null;
+    }
+
+    private PlayerHandoffResolution ResolveRequest(PlayerMotionNodeKey sourceKey, PlayerMotionNodeKey targetKey)
+    {
+        PlayerHandoffResolution next = catalog.ResolveRequest(sourceKey, targetKey);
+        if (!next.IsValid) throw new InvalidOperationException(next.Error);
+        return next;
     }
     private Node CreateNode(PlayerMotionNodeKey key, PlayerFoot foot, Vector3 facing, Vector3 desired, Vector3 velocity)
     {
@@ -159,9 +166,11 @@ public class PlayerHandoffRuntime
         bool reachedTrigger = false;
         while (target != null)
         {
-            PlayerHandoffDefinition successor = target.Key.IsMotion && !target.SuccessorConsumed ? catalog.GetSuccessor(target.Key) : null;
+            PlayerHandoffResolution successor = default;
+            bool hasSuccessor = target.Key.IsMotion && !target.SuccessorConsumed && catalog.TryGetSuccessor(target.Key, out successor);
+            if (hasSuccessor && !successor.IsValid) throw new InvalidOperationException(successor.Error);
             //检查距离事件触发点的时间
-            float untilTrigger = successor == null ? float.PositiveInfinity : Mathf.Max(0f, successor.SourceTriggerProgress * target.Duration - target.Elapsed);
+            float untilTrigger = !hasSuccessor ? float.PositiveInfinity : Mathf.Max(0f, successor.SourceTriggerProgress * target.Duration - target.Elapsed);
             if (reachedTrigger || untilTrigger <= 0f)
             {
                 reachedTrigger = false;
@@ -175,7 +184,7 @@ public class PlayerHandoffRuntime
                 Node retained = source ?? target;
                 float pose = source == null ? 1f : PoseWeight;
                 float move = source == null ? 1f : MoveWeight;
-                PlayerHandoffDefinition next = retained == target ? successor : catalog.GetHandoff(retained.Key, successor.Target, PlayerHandoffTriggerMode.Request);
+                PlayerHandoffResolution next = retained == target ? successor : ResolveRequest(retained.Key, successor.Target);
                 source = retained;
                 if (retained == target) CaptureSourceFacing(source, facing);
                 PlayerMotionSnapshot completedSource = target.Motion.Snapshot;
@@ -189,7 +198,7 @@ public class PlayerHandoffRuntime
             float untilBlendEnd = source == null ? float.PositiveInfinity : Mathf.Max(0f, duration - elapsed);
             step = Mathf.Min(step, untilBlendEnd);
             //直接消费本段选中的边界，避免浮点累加不再推进时反复采样
-            reachedTrigger = successor != null && step >= untilTrigger;
+            reachedTrigger = hasSuccessor && step >= untilTrigger;
             bool reachedBlendEnd = source != null && step >= untilBlendEnd;
             float startWeight = MoveWeight;
             //两端采样，但只有目标接收输入

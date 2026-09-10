@@ -75,6 +75,8 @@ public class PlayerMotionDefinition : ScriptableObject
     [SerializeField] private PlayerMotionInterruptedExitPolicy interruptedExitPolicy;
     //是否需要对应的动画表现
     [SerializeField] private bool requiresPresentation = true;
+    [SerializeField] private PlayerHandoffEntrySettings handoffEntry = new PlayerHandoffEntrySettings();
+    [SerializeField] private PlayerHandoffSuccessorSettings defaultSuccessor = new PlayerHandoffSuccessorSettings();
 
     public PlayerMotionProfile Profile => profile;
     public PlayerMotionProfile LeftFootProfile => leftFootProfile;
@@ -91,6 +93,8 @@ public class PlayerMotionDefinition : ScriptableObject
     public float TransitionLockEndProgress => transitionLockEndProgress;
     public PlayerMotionInterruptedExitPolicy InterruptedExitPolicy => interruptedExitPolicy;
     public bool RequiresPresentation => requiresPresentation;
+    public PlayerHandoffEntrySettings HandoffEntry => handoffEntry;
+    public PlayerHandoffSuccessorSettings DefaultSuccessor => defaultSuccessor;
 
     public PlayerMotionProfile ResolveProfile(PlayerFoot foot)
     {
@@ -135,6 +139,16 @@ public class PlayerMotionDefinition : ScriptableObject
         if (rotationPolicy == PlayerMotionRotationPolicy.ProfileYaw && !profile.HasYaw) { errors?.Add(name + ": ProfileYaw 需要有效 Yaw channel。"); valid = false; }
         if (translationPolicy == PlayerMotionTranslationPolicy.LocalTrajectory && !profile.HasPlanarPosition) { errors?.Add(name + ": LocalTrajectory 需要有效 XZ channel。"); valid = false; }
         if ((translationPolicy == PlayerMotionTranslationPolicy.TravelAlongCapturedDirection || translationPolicy == PlayerMotionTranslationPolicy.TravelAlongDesiredDirection) && !profile.HasTravelDistance) { errors?.Add(name + ": TravelAlong 需要有效 Travel channel。"); valid = false; }
+        return valid;
+    }
+
+    public bool ValidateHandoff(PlayerMotionNodeKey node, ICollection<string> errors)
+    {
+        bool valid = true;
+        if (handoffEntry == null) { errors?.Add(name + ": 缺少进入混合配置。"); valid = false; }
+        else valid &= handoffEntry.Validate(node, errors, name + ".Entry");
+        if (defaultSuccessor == null) { errors?.Add(name + ": 缺少默认后继配置。"); valid = false; }
+        else valid &= defaultSuccessor.Validate(node, errors, name + ".Successor");
         return valid;
     }
 
@@ -201,6 +215,16 @@ public class PlayerMotionDefinition : ScriptableObject
         leftFootProfile = left;
         rightFootProfile = right;
         requiresFootProfiles = requireProfiles;
+    }
+
+    public void ConfigureHandoffEntry(PlayerHandoffEntrySettings entry)
+    {
+        handoffEntry = entry;
+    }
+
+    public void ConfigureDefaultSuccessor(PlayerHandoffSuccessorSettings successor)
+    {
+        defaultSuccessor = successor;
     }
 #endif
 }

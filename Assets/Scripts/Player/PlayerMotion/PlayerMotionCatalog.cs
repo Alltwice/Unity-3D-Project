@@ -40,33 +40,37 @@ public struct PlayerMotionCatalogEntry
     public PlayerMotionDefinition Definition => definition;
 }
 
+[Serializable]
+public struct PlayerLocomotionHandoffEntry
+{
+    [SerializeField] private PlayerLocomotionMode mode;
+    [SerializeField] private PlayerHandoffEntrySettings entry;
+
+    public PlayerLocomotionMode Mode => mode;
+    public PlayerHandoffEntrySettings Entry => entry;
+
+    public PlayerLocomotionHandoffEntry(PlayerLocomotionMode locomotionMode, PlayerHandoffEntrySettings entrySettings)
+    {
+        mode = locomotionMode;
+        entry = entrySettings;
+    }
+}
+
 [CreateAssetMenu(fileName = "PlayerMotionCatalog", menuName = "Player/Motion/Catalog")]
 public class PlayerMotionCatalog : ScriptableObject
 {
     [SerializeField] private List<PlayerMotionCatalogEntry> motions = new List<PlayerMotionCatalogEntry>();
-    [SerializeField] private List<PlayerHandoffDefinition> handoffs = new List<PlayerHandoffDefinition>();
-    public IReadOnlyList<PlayerHandoffDefinition> Handoffs => handoffs;
+    [SerializeField] private List<PlayerLocomotionHandoffEntry> loopHandoffEntries = new List<PlayerLocomotionHandoffEntry>();
     public PlayerMotionId GetId(PlayerMotionDefinition definition)
     {
         foreach (PlayerMotionCatalogEntry entry in motions) if (entry.Definition == definition) return entry.Id;
         throw new InvalidOperationException("Motion Definition 不在 Catalog 中。");
     }
-    public PlayerHandoffDefinition GetHandoff(PlayerMotionNodeKey source, PlayerMotionNodeKey target, PlayerHandoffTriggerMode trigger)
-    {
-        foreach (PlayerHandoffDefinition handoff in handoffs)
-            if (handoff.Source.Equals(source) && handoff.Target.Equals(target) && handoff.TriggerMode == trigger) return handoff;
-        throw new InvalidOperationException("缺少 Handoff: " + source + " -> " + target + " (" + trigger + ")");
-    }
-    public PlayerHandoffDefinition GetSuccessor(PlayerMotionNodeKey source)
-    {
-        foreach (PlayerHandoffDefinition handoff in handoffs)
-            if (handoff.Source.Equals(source) && handoff.TriggerMode == PlayerHandoffTriggerMode.SourceProgress) return handoff;
-        return null;
-    }
     [SerializeField] private List<PlayerLocomotionCycleDefinition> locomotionCycles = new List<PlayerLocomotionCycleDefinition>();
     [Range(90f, 180f)] [SerializeField] private float turn180Threshold = 150f;
 
     public IReadOnlyList<PlayerMotionCatalogEntry> Motions => motions;
+    public IReadOnlyList<PlayerLocomotionHandoffEntry> LoopHandoffEntries => loopHandoffEntries;
     public IReadOnlyList<PlayerLocomotionCycleDefinition> LocomotionCycles => locomotionCycles;
     public float Turn180Threshold => turn180Threshold;
 
@@ -97,27 +101,120 @@ public class PlayerMotionCatalog : ScriptableObject
         return false;
     }
 
+    public PlayerHandoffResolution ResolveRequest(PlayerMotionNodeKey source, PlayerMotionNodeKey target)
+    {
+        if (!source.IsValid() || !target.IsValid() || source.Equals(target)) return PlayerHandoffResolution.Invalid(source, target, "Handoff 请求的来源或目标节点无效。");
+        if (!ContainsNode(source)) return PlayerHandoffResolution.Invalid(source, target, "缺少 Handoff 请求来源节点: " + source);
+        if (!TryResolveEntry(target, out PlayerHandoffEntrySettings entry)) return PlayerHandoffResolution.Invalid(source, target, "缺少目标节点进入配置: " + target);
+        if (entry == null) return PlayerHandoffResolution.Invalid(source, target, "目标节点进入配置缺失: " + target);
+        if (!entry.AllowRequest) return PlayerHandoffResolution.Invalid(source, target, "目标节点已禁用请求进入: " + target);
+        IReadOnlyList<PlayerHandoffSourceOverride> overrides = entry.SourceOverrides;
+        if (overrides == null) return PlayerHandoffResolution.Invalid(source, target, "目标节点来源覆盖列表缺失: " + target);
+        for (int i = 0; i < overrides.Count; i++)
+        {
+            if (!overrides[i].Source.Equals(source)) continue;
+            return new PlayerHandoffResolution
+            {
+                Source = source,
+                Target = target,
+                TriggerMode = PlayerHandoffTriggerMode.Request,
+                SourceTriggerProgress = 0f,
+                Blend = overrides[i].Blend,
+                ConfigurationSource = PlayerHandoffConfigurationSource.TargetSourceOverride,
+                IsValid = true
+            };
+        }
+        return new PlayerHandoffResolution
+        {
+            Source = source,
+            Target = target,
+            TriggerMode = PlayerHandoffTriggerMode.Request,
+            SourceTriggerProgress = 0f,
+            Blend = entry.DefaultBlend,
+            ConfigurationSource = PlayerHandoffConfigurationSource.TargetDefaultEntry,
+            IsValid = true
+        };
+    }
+
+    public bool TryGetSuccessor(PlayerMotionNodeKey source, out PlayerHandoffResolution resolution)
+    {
+        resolution = default;
+        if (!source.IsMotion) return false;
+        if (!TryGet(source.Motion, out PlayerMotionDefinition definition))
+        {
+            resolution = PlayerHandoffResolution.Invalid(source, default, "缺少默认后继来源 Motion: " + source);
+            return true;
+        }
+        PlayerHandoffSuccessorSettings successor = definition.DefaultSuccessor;
+        if (successor == null)
+        {
+            resolution = PlayerHandoffResolution.Invalid(source, default, "缺少默认后继配置: " + source);
+            return true;
+        }
+        if (!successor.Enabled) return false;
+        resolution = new PlayerHandoffResolution
+        {
+            Source = source,
+            Target = successor.Target,
+            TriggerMode = PlayerHandoffTriggerMode.SourceProgress,
+            SourceTriggerProgress = successor.SourceTriggerProgress,
+            Blend = successor.Blend,
+            ConfigurationSource = PlayerHandoffConfigurationSource.SourceDefaultSuccessor,
+            IsValid = true
+        };
+        return true;
+    }
+
+    public bool TryGetNodeDuration(PlayerMotionNodeKey node, PlayerFoot foot, out float duration)
+    {
+        if (node.IsMotion)
+        {
+            if (!TryGet(node.Motion, out PlayerMotionDefinition definition)) { duration = 0f; return false; }
+            PlayerMotionProfile profile = definition.ResolveProfile(foot);
+            duration = definition.GetDuration(profile);
+            return profile != null && duration > 0f;
+        }
+        if (!TryGetCycle(node.Locomotion, out PlayerLocomotionCycleDefinition cycle) || !cycle.TryResolveProfile(foot, out PlayerMotionProfile loopProfile, out _)) { duration = 0f; return false; }
+        duration = loopProfile.Duration;
+        return duration > 0f;
+    }
+
+    private bool TryResolveEntry(PlayerMotionNodeKey target, out PlayerHandoffEntrySettings entry)
+    {
+        if (target.IsMotion)
+        {
+            if (TryGet(target.Motion, out PlayerMotionDefinition definition))
+            {
+                entry = definition.HandoffEntry;
+                return true;
+            }
+            entry = null;
+            return false;
+        }
+        for (int i = 0; i < loopHandoffEntries.Count; i++)
+        {
+            if (loopHandoffEntries[i].Mode != target.Locomotion) continue;
+            entry = loopHandoffEntries[i].Entry;
+            return true;
+        }
+        entry = null;
+        return false;
+    }
+
     public bool Validate(ICollection<string> errors)
     {
         bool valid = true;
-        HashSet<string> relations = new HashSet<string>();
-        HashSet<PlayerMotionNodeKey> successors = new HashSet<PlayerMotionNodeKey>();
-        foreach (PlayerHandoffDefinition handoff in handoffs)
-        {
-            if (handoff == null) { errors?.Add(name + ": Handoff 引用缺失。"); valid = false; continue; }
-            valid &= handoff.Validate(errors);
-            if (!relations.Add(handoff.Source + ":" + handoff.Target + ":" + handoff.TriggerMode)) { errors?.Add(name + ": Handoff 关系重复。"); valid = false; }
-            if (handoff.TriggerMode == PlayerHandoffTriggerMode.SourceProgress && !successors.Add(handoff.Source)) { errors?.Add(name + ": 默认后继重复。"); valid = false; }
-            foreach (PlayerMotionNodeKey node in new[] { handoff.Source, handoff.Target })
-                if (node.IsMotion ? !TryGet(node.Motion, out _) : node.Locomotion != PlayerLocomotionMode.Idle && !TryGetCycle(node.Locomotion, out _)) { errors?.Add(name + ": Handoff 节点缺失 " + node); valid = false; }
-        }
         HashSet<PlayerMotionId> motionIds = new HashSet<PlayerMotionId>();
         for (int i = 0; i < motions.Count; i++)
         {
             PlayerMotionCatalogEntry entry = motions[i];
             if (!motionIds.Add(entry.Id)) { errors?.Add(name + ": MotionId " + entry.Id + " 重复。"); valid = false; }
             if (entry.Definition == null) { errors?.Add(name + ": MotionId " + entry.Id + " 缺少 Definition。"); valid = false; }
-            else valid &= entry.Definition.Validate(errors);
+            else
+            {
+                valid &= entry.Definition.Validate(errors);
+                valid &= entry.Definition.ValidateHandoff(PlayerMotionNodeKey.ForMotion(entry.Id), errors);
+            }
         }
         HashSet<PlayerLocomotionMode> cycleModes = new HashSet<PlayerLocomotionMode>();
         for (int i = 0; i < locomotionCycles.Count; i++)
@@ -127,20 +224,67 @@ public class PlayerMotionCatalog : ScriptableObject
             if (!cycleModes.Add(cycle.Mode)) { errors?.Add(name + ": Locomotion Cycle " + cycle.Mode + " 重复。"); valid = false; }
             valid &= cycle.Validate(errors);
         }
-        PlayerLocomotionMode[] requiredModes = { PlayerLocomotionMode.Walk, PlayerLocomotionMode.Run, PlayerLocomotionMode.FastRun };
+        HashSet<PlayerLocomotionMode> entryModes = new HashSet<PlayerLocomotionMode>();
+        for (int i = 0; i < loopHandoffEntries.Count; i++)
+        {
+            PlayerLocomotionHandoffEntry entry = loopHandoffEntries[i];
+            PlayerMotionNodeKey node = PlayerMotionNodeKey.ForLoop(entry.Mode);
+            if (!entryModes.Add(entry.Mode)) { errors?.Add(name + ": Loop 进入配置 " + entry.Mode + " 重复。"); valid = false; }
+            if (entry.Mode != PlayerLocomotionMode.Idle && !PlayerLocomotionCycleDefinition.IsGroundLoopMode(entry.Mode)) { errors?.Add(name + ": Loop 进入配置模式无效 " + entry.Mode + "。"); valid = false; }
+            if (entry.Entry == null) { errors?.Add(name + ": 缺少 Loop 进入配置 " + entry.Mode + "。"); valid = false; continue; }
+            valid &= entry.Entry.Validate(node, errors, name + "." + entry.Mode + ".Entry");
+            valid &= ValidateEntrySources(entry.Entry, node, errors);
+        }
+        PlayerLocomotionMode[] requiredModes = { PlayerLocomotionMode.Idle, PlayerLocomotionMode.Walk, PlayerLocomotionMode.Run, PlayerLocomotionMode.FastRun };
         for (int i = 0; i < requiredModes.Length; i++)
         {
-            if (!cycleModes.Contains(requiredModes[i])) { errors?.Add(name + ": 缺少 " + requiredModes[i] + " Locomotion Cycle。"); valid = false; }
+            if (!entryModes.Contains(requiredModes[i])) { errors?.Add(name + ": 缺少 " + requiredModes[i] + " Loop 进入配置。"); valid = false; }
+        }
+        PlayerLocomotionMode[] requiredCycleModes = { PlayerLocomotionMode.Walk, PlayerLocomotionMode.Run, PlayerLocomotionMode.FastRun };
+        for (int i = 0; i < requiredCycleModes.Length; i++)
+        {
+            if (!cycleModes.Contains(requiredCycleModes[i])) { errors?.Add(name + ": 缺少 " + requiredCycleModes[i] + " Locomotion Cycle。"); valid = false; }
+        }
+        for (int i = 0; i < motions.Count; i++)
+        {
+            PlayerMotionCatalogEntry entry = motions[i];
+            if (entry.Definition == null) continue;
+            valid &= ValidateSuccessor(entry.Definition.DefaultSuccessor, PlayerMotionNodeKey.ForMotion(entry.Id), errors);
         }
         return valid;
     }
 
-#if UNITY_EDITOR
-    public void ConfigureHandoffs(IEnumerable<PlayerHandoffDefinition> relations)
+    private bool ValidateEntrySources(PlayerHandoffEntrySettings entry, PlayerMotionNodeKey target, ICollection<string> errors)
     {
-        handoffs.Clear();
-        handoffs.AddRange(relations);
+        bool valid = true;
+        IReadOnlyList<PlayerHandoffSourceOverride> overrides = entry.SourceOverrides;
+        if (overrides == null) return false;
+        for (int i = 0; i < overrides.Count; i++)
+        {
+            if (!ContainsNode(overrides[i].Source)) { errors?.Add(name + ": 来源覆盖节点缺失 " + overrides[i].Source + "。"); valid = false; }
+        }
+        return valid;
     }
+
+    private bool ValidateSuccessor(PlayerHandoffSuccessorSettings successor, PlayerMotionNodeKey source, ICollection<string> errors)
+    {
+        if (successor == null || !successor.Enabled) return true;
+        return ContainsNode(successor.Target) ? true : AddMissingNodeError(successor.Target, errors);
+    }
+
+    private bool AddMissingNodeError(PlayerMotionNodeKey node, ICollection<string> errors)
+    {
+        errors?.Add(name + ": 默认后继目标节点缺失 " + node + "。");
+        return false;
+    }
+
+    private bool ContainsNode(PlayerMotionNodeKey node)
+    {
+        if (!node.IsValid()) return false;
+        return node.IsMotion ? TryGet(node.Motion, out _) : node.Locomotion == PlayerLocomotionMode.Idle || TryGetCycle(node.Locomotion, out _);
+    }
+
+#if UNITY_EDITOR
     public void Configure(IEnumerable<PlayerMotionCatalogEntry> entries, float turnThreshold)
     {
         motions.Clear();
@@ -155,6 +299,12 @@ public class PlayerMotionCatalog : ScriptableObject
         locomotionCycles.Clear();
         locomotionCycles.AddRange(cycles);
         turn180Threshold = turnThreshold;
+    }
+
+    public void ConfigureLoopHandoffEntries(IEnumerable<PlayerLocomotionHandoffEntry> entries)
+    {
+        loopHandoffEntries.Clear();
+        if (entries != null) loopHandoffEntries.AddRange(entries);
     }
 #endif
 }
