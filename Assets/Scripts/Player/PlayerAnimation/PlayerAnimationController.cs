@@ -17,8 +17,9 @@ public sealed class PlayerAnimationController : MonoBehaviour
     private AnimancerState hardLandingState;
     private AnimancerState landingState;
     private AnimancerState dodgeState;
-    private AnimancerState dodgeToIdleFadeSourceState;
-    private AnimancerState dodgeToIdleFadeState;
+    private AnimancerState dodgeExitFadeSourceState;
+    private AnimancerState dodgeExitFadeTargetState;
+    private ulong dodgeExitFadeTargetInstanceId;
     private ulong presentationSequence;
     private Type gameplayStateType;
 
@@ -62,26 +63,24 @@ public sealed class PlayerAnimationController : MonoBehaviour
 
     private void PresentGround(PlayerHandoffSnapshot handoff, PlayerLocomotionPhaseSnapshot phase, PlayerStateTransition? transition)
     {
-        if (dodgeToIdleFadeState != null && (handoff.IsActive || !handoff.Target.Key.IsMotion || handoff.Target.Key.Motion != PlayerMotionId.DodgeToIdle)) CompleteDodgeToIdleFade();
+        if (dodgeExitFadeTargetState != null && (handoff.IsActive || dodgeExitFadeTargetInstanceId != handoff.Target.InstanceId)) CompleteDodgeExitFade();
         releasedStates.Clear();
         foreach (var pair in groundStates)
             if (pair.Key != handoff.Target.InstanceId && (!handoff.IsActive || pair.Key != handoff.Source.InstanceId)) releasedStates.Add(pair.Key);
         foreach (ulong id in releasedStates) { groundStates[id].Destroy(); groundStates.Remove(id); }
-        AnimancerState target = ResolveGroundState(handoff.Target, phase);
-        AnimancerState source = handoff.IsActive ? ResolveGroundState(handoff.Source, phase) : null;
+        AnimancerState target = ResolveGroundState(handoff.Target, phase, out ClipTransition targetTransition);
+        AnimancerState source = handoff.IsActive ? ResolveGroundState(handoff.Source, phase, out _) : null;
         boundaryState = handoff.Target.Key.IsMotion ? target : null;
         DebugBoundaryPhase = handoff.Target.Motion.Progress;
-        if (transition.HasValue && IsDodgeToIdleEntry(transition.Value) && dodgeState != null)
+        if (transition.HasValue && IsDodgeExitEntry(transition.Value, handoff.Target) && dodgeState != null && dodgeExitFadeTargetState == null)
         {
-            animationSet.TryGetBinding(handoff.Target.Motion.ActiveDefinition, handoff.Target.Motion.ActiveProfile, out _, out ClipTransition clip);
-            dodgeToIdleFadeSourceState = dodgeState;
-            dodgeToIdleFadeState = target;
-            animancer.Play(target, clip.FadeDuration, FadeMode.FixedDuration);
+            BeginDodgeExitFade(target, handoff.Target.InstanceId, targetTransition);
         }
-        if (dodgeToIdleFadeState != null)
+        if (dodgeExitFadeTargetState != null)
         {
-            if (handoff.IsActive || !dodgeToIdleFadeSourceState.IsActive) CompleteDodgeToIdleFade();
-            else return;
+            if (handoff.IsActive || dodgeExitFadeTargetInstanceId != handoff.Target.InstanceId) CompleteDodgeExitFade();
+            else if (dodgeExitFadeSourceState != null && dodgeExitFadeSourceState.IsActive) return;
+            else CompleteDodgeExitFade();
         }
         AnimancerLayer layer = animancer.Layers[0];
         for (int i = layer.ActiveStates.Count - 1; i >= 0; i--)
@@ -94,24 +93,14 @@ public sealed class PlayerAnimationController : MonoBehaviour
         target.Weight = 1f - handoff.SourcePoseWeight;
     }
 
-    private AnimancerState ResolveGroundState(PlayerHandoffNodeSnapshot node, PlayerLocomotionPhaseSnapshot phase)
+    private AnimancerState ResolveGroundState(PlayerHandoffNodeSnapshot node, PlayerLocomotionPhaseSnapshot phase, out ClipTransition transition)
     {
         if (node.Phase.HasLoop) phase = node.Phase;
+        if (!TryResolveGroundTransition(node, phase, out transition)) throw new InvalidOperationException("Missing ground animation: " + node.Key);
         if (!groundStates.TryGetValue(node.InstanceId, out AnimancerState state))
         {
-            ClipTransition clip;
-            if (node.Key.IsMotion)
-            {
-                if (!animationSet.TryGetBinding(node.Motion.ActiveDefinition, node.Motion.ActiveProfile, out _, out clip)) throw new InvalidOperationException("Missing Motion animation: " + node.Key);
-            }
-            else
-            {
-                PlayerFoot foot = phase.HasLoop && phase.Mode == node.Key.Locomotion ? phase.VariantFoot : PlayerFoot.Unknown;
-                if (!animationSet.TryResolveLoop(node.Key.Locomotion, foot, out PlayerAnimationSelection selection)) throw new InvalidOperationException("Missing Loop animation: " + node.Key);
-                clip = selection.Transition;
-            }
-            state = animancer.Layers[0].CreateState(new object(), clip.Clip);
-            clip.Apply(state);
+            state = animancer.Layers[0].CreateState(new object(), transition.Clip);
+            transition.Apply(state);
             state.Play();
             groundStates.Add(node.InstanceId, state);
         }
@@ -123,9 +112,23 @@ public sealed class PlayerAnimationController : MonoBehaviour
         return state;
     }
 
+    private bool TryResolveGroundTransition(PlayerHandoffNodeSnapshot node, PlayerLocomotionPhaseSnapshot phase, out ClipTransition transition)
+    {
+        if (node.Phase.HasLoop) phase = node.Phase;
+        if (node.Key.IsMotion) return animationSet.TryGetBinding(node.Motion.ActiveDefinition, node.Motion.ActiveProfile, out _, out transition);
+        PlayerFoot foot = phase.HasLoop && phase.Mode == node.Key.Locomotion ? phase.VariantFoot : PlayerFoot.Unknown;
+        if (animationSet.TryResolveLoop(node.Key.Locomotion, foot, out PlayerAnimationSelection selection))
+        {
+            transition = selection.Transition;
+            return true;
+        }
+        transition = null;
+        return false;
+    }
+
     private void ClearGroundStates()
     {
-        ClearDodgeToIdleFade();
+        ClearDodgeExitFade();
         foreach (AnimancerState state in groundStates.Values) state.Destroy();
         groundStates.Clear();
     }
@@ -134,7 +137,7 @@ public sealed class PlayerAnimationController : MonoBehaviour
     {
         landingState = null;
         ++presentationSequence;
-        ClearDodgeToIdleFade();
+        ClearDodgeExitFade();
         ClearBoundary();
         dodgeState = null;
         if (transition.CurrentStateType == typeof(PlayerDodgeState))
@@ -263,30 +266,63 @@ public sealed class PlayerAnimationController : MonoBehaviour
         }
     }
 
-    private static bool IsDodgeToIdleEntry(PlayerStateTransition transition)
+    private static bool IsDodgeExitEntry(PlayerStateTransition transition, PlayerHandoffNodeSnapshot target)
     {
-        return transition.PreviousStateType == typeof(PlayerDodgeState) && transition.CurrentStateType == typeof(PlayerIdleState) && transition.Reason == PlayerStateTransitionReason.DodgeCompleted;
+        if (transition.PreviousStateType != typeof(PlayerDodgeState) || transition.Reason != PlayerStateTransitionReason.DodgeCompleted) return false;
+        if (transition.CurrentStateType == typeof(PlayerIdleState)) return target.Key.IsMotion && target.Key.Motion == PlayerMotionId.DodgeToIdle;
+        return transition.CurrentStateType == typeof(PlayerFastRunState) && !target.Key.IsMotion && target.Key.Locomotion == PlayerLocomotionMode.FastRun;
     }
 
-    private void CompleteDodgeToIdleFade()
+    private void BeginDodgeExitFade(AnimancerState target, ulong targetInstanceId, ClipTransition transition)
     {
-        AnimancerState sourceState = dodgeToIdleFadeSourceState;
-        AnimancerState endState = dodgeToIdleFadeState;
-        if (endState != null && endState.FadeGroup != null) endState.FadeGroup.Finish();
-        dodgeToIdleFadeSourceState = null;
-        dodgeToIdleFadeState = null;
+        AnimancerState source = dodgeState;
+        dodgeExitFadeSourceState = source;
+        dodgeExitFadeTargetState = target;
+        dodgeExitFadeTargetInstanceId = targetInstanceId;
+        // 完成转换先于本帧表现，补齐 Dodge 最后姿态再从零权重淡入地面姿态
+        source.Speed = 0f;
+        source.IsPlaying = false;
+        source.NormalizedTime = 1f;
+        target.CancelFade();
+        target.Weight = 0f;
+        if (transition.FadeDuration <= 0f)
+        {
+            target.Weight = 1f;
+            CompleteDodgeExitFade();
+            return;
+        }
+        animancer.Play(target, transition.FadeDuration, FadeMode.FixedDuration);
+    }
+
+    private void CompleteDodgeExitFade()
+    {
+        AnimancerState sourceState = dodgeExitFadeSourceState;
+        AnimancerState endState = dodgeExitFadeTargetState;
+        if (endState != null)
+        {
+            if (endState.FadeGroup != null) endState.FadeGroup.Finish();
+            endState.Weight = 1f;
+        }
+        dodgeExitFadeSourceState = null;
+        dodgeExitFadeTargetState = null;
+        dodgeExitFadeTargetInstanceId = 0;
         if (sourceState == dodgeState) dodgeState = null;
         if (sourceState != null && sourceState != boundaryState) sourceState.Stop();
     }
 
-    private void ClearDodgeToIdleFade()
+    private void ClearDodgeExitFade()
     {
-        AnimancerState sourceState = dodgeToIdleFadeSourceState;
-        AnimancerState endState = dodgeToIdleFadeState;
-        dodgeToIdleFadeSourceState = null;
-        dodgeToIdleFadeState = null;
+        AnimancerState sourceState = dodgeExitFadeSourceState;
+        AnimancerState endState = dodgeExitFadeTargetState;
+        dodgeExitFadeSourceState = null;
+        dodgeExitFadeTargetState = null;
+        dodgeExitFadeTargetInstanceId = 0;
         if (sourceState == dodgeState) dodgeState = null;
-        if (endState != null) endState.Stop();
+        if (endState != null)
+        {
+            endState.CancelFade();
+            endState.Stop();
+        }
         if (sourceState != null && sourceState != endState) sourceState.Stop();
     }
 

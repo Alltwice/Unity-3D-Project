@@ -268,7 +268,7 @@ Catalog 还按 `LocomotionMode` 保存 Idle、Walk、Run、FastRun 的 Loop 进�
 它负责：
 
 - 状态进入 / 退出 Motion 解析
-- Start / Stop / 180° Turn，以及 Dodge 完成进入 Idle 时的 DodgeToIdle Motion 选择
+- Start / Stop / 180° Turn，以及 Dodge 完成后的 `DodgeToIdle` Motion 或 `FastRunLoop` 目标选择
 - 根据 Foot Phase 选择对应 Foot Profile
 - 根据已批准的状态转换请求目标，HandoffRuntime 保留源采样实例及切换时平面速度
 - 驱动 `PlayerMotionRuntime`
@@ -456,7 +456,7 @@ Controller 按 Handoff 节点实例创建独立 Animancer State，即使 Clip �
 
 A→B 混合中请求 C 时，Runtime 保留 A 的采样进度及当前姿态/平移权重，立即释放 B，按 Catalog 对 C 的目标进入配置重新计时。源权重为捕获权重乘 `1-Curve(u)`，目标补足到 1；旧目标的姿态与速度贡献被立即替换。请求回到来源时交换两端，复用来源实例恢复权重。
 
-DodgeToIdle 入口仍保留独立 FixedDuration Fade；开始向 Idle 交接时结束该 Fade，后续使用统一 Handoff。Jump、Landing 和 Dodge 本体仍走独立表现路径。
+Dodge 完成进入地面时，`PlayerAnimationController` 对 `DodgeToIdle` Motion 和 `FastRunLoop` 共用独立 FixedDuration 姿态 Fade：完成转换时补齐 Dodge 最后姿态，按目标节点实际解析出的 `ClipTransition` 将目标从零权重淡入；目标节点实例未改变时继续当前 Fade，目标被替换或统一 Handoff 开始时先结束专用 Fade，再应用地面两节点快照。再次 Dodge 或进入空中会取消并清理专用 Fade，零时长直接完成。该 Fade 只控制姿态权重，FastRun 的移动与相位仍由 Simulation 立即交给目标；Jump、Landing 和 Dodge 本体仍走独立表现路径。
 
 ## 10. Editor 烘焙与预览工具链
 
