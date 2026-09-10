@@ -101,11 +101,6 @@ public class PlayerMotor : MonoBehaviour
         Vector3 facing = command.DesiredFacingDirection;
         facing.y = 0f;
         if (command.RotationMode != PlayerMotorRotationMode.FaceDirection || facing.sqrMagnitude < 0.0001f) return;
-        //创建一个旋转
-        Quaternion target = Quaternion.LookRotation(facing.normalized, Vector3.up);
-        //e的x次方的－值适合做平滑曲线，相比于简单的平滑速度在不同帧率下的稳定性更佳
-        float t = 1f - Mathf.Exp(-config.Locomotion.RotationSmoothSpeed * deltaTime);
-        //平滑旋转
-        transform.rotation = Quaternion.Slerp(transform.rotation, target, t);
+        transform.rotation = PlayerMotorKinematics.CalculateSmoothRotation(transform.rotation, facing, config.Locomotion.RotationSmoothSpeed, deltaTime);
     }
 }
