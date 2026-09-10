@@ -2,38 +2,55 @@ using System;
 using UnityEngine;
 
 /// <summary>
-/// 将 Gameplay transition/intent 解析成唯一 MotionDefinition，不接触动画或 CharacterController
+/// 将 Gameplay transition/intent 解析成目标节点，统一运行时执行交接，不接触动画或 CharacterController
 /// </summary>
 public class PlayerMotionPlanner : MonoBehaviour
 {
     [SerializeField] private PlayerMotionCatalog catalog;
 
-    private readonly PlayerMotionRuntime runtime = new PlayerMotionRuntime();
+    private PlayerHandoffRuntime runtime;
+    public PlayerHandoffSnapshot HandoffSnapshot => runtime.Snapshot;
     private PlayerLocomotionPhaseRuntime phaseRuntime;
 
     public PlayerMotionCatalog Catalog => catalog;
-    public PlayerMotionSnapshot Snapshot => runtime.Snapshot;
-    public PlayerLocomotionPhaseSnapshot PhaseSnapshot => phaseRuntime.Snapshot;
+    public PlayerMotionSnapshot Snapshot => runtime.MotionSnapshot;
+    public PlayerLocomotionPhaseSnapshot PhaseSnapshot
+    {
+        get
+        {
+            PlayerHandoffSnapshot handoff = runtime.Snapshot;
+            if (handoff.Target.Phase.HasLoop) return handoff.Target.Phase;
+            if (handoff.IsActive && handoff.Source.Phase.HasLoop) return handoff.Source.Phase;
+            return phaseRuntime.Snapshot;
+        }
+    }
 
     private void Awake()
     {
         phaseRuntime = new PlayerLocomotionPhaseRuntime(catalog);
+        runtime = new PlayerHandoffRuntime(catalog);
     }
 
     public void BeginFrame() => runtime.BeginFrame();
 
     public void HandleStateTransition(PlayerStateTransition transition, PlayerGameplayIntent intent, PlayerMotorResult motorResult)
     {
+        if (transition.PreviousStateType == typeof(PlayerAirState) || transition.PreviousStateType == typeof(PlayerHardLandingState))
+        {
+            runtime.Clear();
+            return;
+        }
+        if (transition.CurrentStateType == typeof(PlayerAirState) || transition.CurrentStateType == typeof(PlayerDodgeState) || transition.CurrentStateType == typeof(PlayerHardLandingState)) { runtime.Clear(); return; }
         if (TryResolveTargetTransitionMotion(transition, intent, out PlayerMotionDefinition definition))
         {
             Begin(definition, intent, motorResult);
             return;
         }
-        PlayerMotionSnapshot motion = runtime.Snapshot;
-        //如果动画被锁定runtime模拟停止
+        PlayerMotionSnapshot motion = runtime.MotionSnapshot;
+        //中断策略只选择目标表现，不绕过状态层的锁定裁决
         if (motion.IsActive && motion.ActiveDefinition != null && motion.ActiveDefinition.InterruptedExitPolicy == PlayerMotionInterruptedExitPolicy.DirectToTargetPresentation)
         {
-            runtime.Cancel();
+            RequestLoop(intent, motorResult);
             return;
         }
         if (TryResolveSourceExitMotion(transition, out definition))
@@ -41,14 +58,14 @@ public class PlayerMotionPlanner : MonoBehaviour
             Begin(definition, intent, motorResult);
             return;
         }
-        if (runtime.Snapshot.IsActive) runtime.Cancel();
+        RequestLoop(intent, motorResult);
     }
     /// <summary>
     /// 处理了左右转向的动画
     /// </summary>
     public void ResolveContinuousMotion(Type stateType, PlayerGameplayIntent intent, PlayerMotorResult motorResult)
     {
-        if (runtime.Snapshot.IsActive || intent.DesiredMoveDirection.sqrMagnitude < 0.0001f) return;
+        if (runtime.MotionSnapshot.IsActive || intent.DesiredMoveDirection.sqrMagnitude < 0.0001f) return;
         PlayerMotionId left;
         PlayerMotionId right;
         if (stateType == typeof(PlayerWalkState))
@@ -73,16 +90,19 @@ public class PlayerMotionPlanner : MonoBehaviour
         if (catalog.TryGet(signedAngle < 0f ? left : right, out PlayerMotionDefinition definition)) Begin(definition, intent, motorResult);
     }
 
-    public PlayerMotionFrame Advance(float deltaTime, PlayerGameplayIntent intent)
+    public System.Collections.Generic.IReadOnlyList<PlayerHandoffStep> Advance(float deltaTime, PlayerGameplayIntent intent)
     {
-        return runtime.Advance(deltaTime, intent);
+        return runtime.Advance(deltaTime, intent, transform.forward, PhaseSnapshot.LastPlantFoot);
     }
     /// <summary>
     /// 这里planner通过移动数据驱动phaseRuntime
     /// </summary>
     public void CommitLocomotionPhase(PlayerLocomotionMode locomotionMode, PlayerMotorResult motorResult)
     {
-        phaseRuntime.Commit(locomotionMode, motorResult, runtime.Snapshot);
+        PlayerHandoffSnapshot handoff = runtime.Snapshot;
+        PlayerMotionSnapshot footSource = handoff.Target.Key.IsMotion ? runtime.MotionSnapshot : handoff.Source.Motion;
+        phaseRuntime.Commit(locomotionMode, motorResult, footSource, handoff);
+        runtime.CommitPhase(motorResult);
     }
     /// <summary>
     /// 先解析目标进入 Motion，再按当前 Motion 的中断策略处理源状态退出 Motion
@@ -125,22 +145,21 @@ public class PlayerMotionPlanner : MonoBehaviour
         PlayerMotionId turnId = signedAngle < 0f ? left : right;
         return catalog.TryGet(turnId, out _) ? turnId : standard;
     }
-
+    /// <summary>
+    /// 请求进入运行时
+    /// </summary>
     private void Begin(PlayerMotionDefinition definition, PlayerGameplayIntent intent, PlayerMotorResult motorResult)
     {
-        Vector3 desired = intent.DesiredMoveDirection.sqrMagnitude > 0.0001f ? intent.DesiredMoveDirection : transform.forward;
-        Vector3 entryVelocity = motorResult.HorizontalVelocity.sqrMagnitude > 0.0001f ? motorResult.HorizontalVelocity : transform.forward;
-        Vector3 basis = definition.BasisPolicy == PlayerMotionBasisPolicy.DesiredDirection ? desired : definition.BasisPolicy == PlayerMotionBasisPolicy.EntryVelocityDirection ? entryVelocity : transform.forward;
-        PlayerFoot entryFoot = definition.ResolveEntryFoot(PhaseSnapshot);
-        PlayerMotionProfile selectedProfile = definition.ResolveProfile(entryFoot);
-        runtime.Begin(definition, selectedProfile, entryFoot, ResolveEntrySource(definition, motorResult), basis, desired);
+        PlayerFoot foot = definition.ResolveEntryFoot(PhaseSnapshot);
+        if (!runtime.Snapshot.HasTarget && catalog.GetId(definition) != PlayerMotionId.DodgeToIdle)
+            runtime.SetImmediate(PlayerMotionNodeKey.ForLoop(PhaseSnapshot.HasLoop ? PhaseSnapshot.Mode : PlayerLocomotionMode.Idle), foot, transform.forward, intent.DesiredMoveDirection, motorResult.HorizontalVelocity);
+        runtime.Request(PlayerMotionNodeKey.ForMotion(catalog.GetId(definition)), foot, transform.forward, intent.DesiredMoveDirection, motorResult.HorizontalVelocity);
     }
 
-    private PlayerMotionEntrySource ResolveEntrySource(PlayerMotionDefinition definition, PlayerMotorResult motorResult)
+    private void RequestLoop(PlayerGameplayIntent intent, PlayerMotorResult motorResult)
     {
-        PlayerLocomotionPhaseSnapshot phase = PhaseSnapshot;
-        if (definition == null || !definition.HasEntryHandoff || !phase.HasLoop || !PlayerLocomotionCycleDefinition.IsGroundLoopMode(phase.Mode)) return default;
-        return new PlayerMotionEntrySource(phase.Mode, motorResult.HorizontalVelocity);
+        if (intent.LocomotionMode > PlayerLocomotionMode.FastRun) { runtime.Clear(); return; }
+        runtime.Request(PlayerMotionNodeKey.ForLoop(intent.LocomotionMode), PhaseSnapshot.LastPlantFoot, transform.forward, intent.DesiredMoveDirection, motorResult.HorizontalVelocity);
     }
     /// <summary>
     /// 角度计算

@@ -78,7 +78,7 @@ public class PlayerSimulationDriver : MonoBehaviour
         stateController.Tick(deltaTime, ref intent);
         motionPlanner.ResolveContinuousMotion(stateController.CurrentState.GetType(), intent, motor.CurrentResult);
         //依据数据真正的执行移动
-        PlayerMotionFrame motionFrame = motionPlanner.Advance(deltaTime, intent);
+        System.Collections.Generic.IReadOnlyList<PlayerHandoffStep> motionFrame = motionPlanner.Advance(deltaTime, intent);
         //拿到动画数据驱动时的命令
         PlayerMotorCommand command = PlayerMotionComposer.Compose(intent, motionFrame, motor.CurrentResult, motor.Config, deltaTime, transform.forward);
         //执行动画移动
@@ -102,7 +102,7 @@ public class PlayerSimulationDriver : MonoBehaviour
         pendingTransition = null;
         motionPlanner.CommitLocomotionPhase(stateController.CurrentLocomotionMode, motorResult);
         //播放动画表现
-        animationController.Present(stateController.CurrentState.GetType(), presentationTransition, motionPlanner.Snapshot, motionPlanner.PhaseSnapshot, stateController.CurrentPresentationProgress, landingPresentation);
+        animationController.Present(stateController.CurrentState.GetType(), presentationTransition, motionPlanner.Snapshot, motionPlanner.PhaseSnapshot, stateController.CurrentPresentationProgress, landingPresentation, motionPlanner.HandoffSnapshot);
         //animancer设定为手动后需要手动更新
         animationController.EvaluateGraph(deltaTime);
     }

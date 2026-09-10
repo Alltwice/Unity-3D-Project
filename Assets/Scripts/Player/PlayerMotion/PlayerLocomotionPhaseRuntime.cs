@@ -22,17 +22,20 @@ public class PlayerLocomotionPhaseRuntime
     }
 
     public PlayerLocomotionPhaseSnapshot Snapshot => BuildSnapshot();
+    internal void InitializeFoot(PlayerFoot foot) { lastPlantFoot = foot; }
 
     /// <summary>
     /// 在一帧的最后，拿到motor的移动数据后反推动画相位来到了多少，然后将数据交由动画管理器由其推进动画
     /// </summary>
-    public void Commit(PlayerLocomotionMode locomotionMode, PlayerMotorResult motorResult, PlayerMotionSnapshot motion)
+    public void Commit(PlayerLocomotionMode locomotionMode, PlayerMotorResult motorResult, PlayerMotionSnapshot motion, PlayerHandoffSnapshot handoff = default)
     {
         UpdateLastPlantFootFromBoundary(motion);
-        bool retainEntrySourceLoop = motion.HasEntrySource && motion.EntryHandoffActive && PlayerLocomotionCycleDefinition.IsGroundLoopMode(motion.EntrySourceLocomotionMode) && motorResult.IsGrounded;
-        if (retainEntrySourceLoop)
+        if (handoff.HasTarget)
         {
-            AdvanceLoop(motorResult);
+            PlayerHandoffNodeSnapshot loop = !handoff.Target.Key.IsMotion ? handoff.Target : handoff.IsActive && !handoff.Source.Key.IsMotion ? handoff.Source : default;
+            if (loop.InstanceId == 0 || !motorResult.IsGrounded || !PlayerLocomotionCycleDefinition.IsGroundLoopMode(loop.Key.Locomotion)) { PauseForBoundary(locomotionMode); return; }
+            if (!hasLoop || mode != loop.Key.Locomotion) ActivateCycle(loop.Key.Locomotion);
+            else AdvanceLoop(motorResult);
             return;
         }
         //是不是loop动画
@@ -41,14 +44,13 @@ public class PlayerLocomotionPhaseRuntime
             CloseCycle(locomotionMode);
             return;
         }
-        if (motion.IsActive && !motion.ExitHandoffActive)
+        if (motion.IsActive)
         {
             PauseForBoundary(locomotionMode);
             return;
         }
         bool modeChanged = !hasLoop || mode != locomotionMode;
-        bool enteredHandoff = motion.IsActive && motion.ExitHandoffActive && loopMotionInstanceId != motion.InstanceId;
-        if (modeChanged || enteredHandoff)
+        if (modeChanged)
         {
             ActivateCycle(locomotionMode);
             loopMotionInstanceId = motion.ActiveDefinition != null ? motion.InstanceId : 0;

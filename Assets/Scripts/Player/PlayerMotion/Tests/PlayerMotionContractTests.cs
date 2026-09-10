@@ -6,33 +6,30 @@ using UnityEngine;
 public class PlayerMotionContractTests
 {
     [Test]
-    public void EntryHandoffMapsConfiguredRangeToZeroAndOne()
+    public void HandoffResolvesDurationAndWeightEndpoints()
     {
-        PlayerMotionDefinition definition = CreateDefinition(out PlayerMotionProfile profile);
-        definition.ConfigureEntryHandoff(0.2f);
-        Assert.That(definition.CalculateEntryHandoffProgress(0f), Is.Zero);
-        Assert.That(definition.CalculateEntryHandoffProgress(0.1f), Is.EqualTo(0.5f).Within(0.0001f));
-        Assert.That(definition.CalculateEntryHandoffProgress(0.2f), Is.EqualTo(1f).Within(0.0001f));
-        Assert.That(definition.EvaluateEntryTranslationWeight(0f), Is.Zero);
-        Assert.That(definition.EvaluateEntryTranslationWeight(0.2f), Is.EqualTo(1f).Within(0.0001f));
-        Destroy(definition, profile);
+        PlayerHandoffDefinition relation = ScriptableObject.CreateInstance<PlayerHandoffDefinition>();
+        relation.Configure(PlayerMotionNodeKey.ForLoop(PlayerLocomotionMode.Run), PlayerMotionNodeKey.ForMotion(PlayerMotionId.RunToIdle), PlayerHandoffTriggerMode.Request, 0f, PlayerHandoffDurationMode.TargetMotionRatio, 0.2f, AnimationCurve.Linear(0f, 0f, 1f, 1f), AnimationCurve.Linear(0f, 0f, 1f, 1f));
+        Assert.That(relation.ResolveDuration(0f, 2f), Is.EqualTo(0.4f).Within(0.0001f));
+        Assert.That(relation.EvaluateTranslation(0f), Is.Zero);
+        Assert.That(relation.EvaluateTranslation(1f), Is.EqualTo(1f));
+        Destroy(relation);
     }
 
     [Test]
-    public void DefinitionRejectsOverlappingHandoffRanges()
+    public void HandoffRejectsLoopProgressClock()
     {
-        PlayerMotionDefinition definition = CreateDefinition(out PlayerMotionProfile profile, 0.7f, 1f);
-        definition.ConfigureEntryHandoff(0.8f);
+        PlayerHandoffDefinition relation = ScriptableObject.CreateInstance<PlayerHandoffDefinition>();
+        relation.Configure(PlayerMotionNodeKey.ForLoop(PlayerLocomotionMode.Run), PlayerMotionNodeKey.ForMotion(PlayerMotionId.RunToIdle), PlayerHandoffTriggerMode.SourceProgress, 0.7f, PlayerHandoffDurationMode.SourceMotionRatio, 0.2f, AnimationCurve.Linear(0f, 0f, 1f, 1f), AnimationCurve.Linear(0f, 0f, 1f, 1f));
         List<string> errors = new List<string>();
-        Assert.That(definition.Validate(errors), Is.False);
-        Assert.That(errors.Exists(error => error.Contains("Handoff")), Is.True);
-        Destroy(definition, profile);
+        Assert.That(relation.Validate(errors), Is.False);
+        Destroy(relation);
     }
 
     [Test]
     public void DefinitionRejectsTransitionLockOutsideNormalizedRange()
     {
-        PlayerMotionDefinition definition = CreateDefinition(out PlayerMotionProfile profile, 0.8f, 1f, -0.1f);
+        PlayerMotionDefinition definition = CreateDefinition(out PlayerMotionProfile profile, -0.1f);
         List<string> errors = new List<string>();
         Assert.That(definition.Validate(errors), Is.False);
         Assert.That(errors.Exists(error => error.Contains("TransitionLockEndProgress")), Is.True);
@@ -61,15 +58,15 @@ public class PlayerMotionContractTests
     }
 
     [Test]
-    public void ComposerUsesAuthoredDisplacementAtFullAuthorityAndVelocityAtZeroAuthority()
+    public void ComposerUsesMotionDisplacementOrLocomotionWithoutMotion()
     {
         PlayerMotionDefinition definition = CreateDefinition(out PlayerMotionProfile profile);
         PlayerMovementConfig config = ScriptableObject.CreateInstance<PlayerMovementConfig>();
         PlayerGameplayIntent intent = PlayerGameplayIntent.Create(Vector3.forward, Vector3.forward);
         intent.LocomotionMode = PlayerLocomotionMode.Run;
         PlayerMotorResult result = MotorResult(Vector3.forward * 2f);
-        PlayerMotorCommand authored = PlayerMotionComposer.Compose(intent, new PlayerMotionFrame(definition, Vector3.forward, 0f, 0f, 0f, 0f, 1f), result, config, 0.1f, Vector3.forward);
-        PlayerMotorCommand locomotion = PlayerMotionComposer.Compose(intent, new PlayerMotionFrame(definition, Vector3.forward, 0f, 0f, 0f, 0f, 0f), result, config, 0.1f, Vector3.forward);
+        PlayerMotorCommand authored = PlayerMotionComposer.Compose(intent, new PlayerMotionFrame(definition, Vector3.forward, 0f, 0f, 0f, 0f), result, config, 0.1f, Vector3.forward);
+        PlayerMotorCommand locomotion = PlayerMotionComposer.Compose(intent, default(PlayerMotionFrame), result, config, 0.1f, Vector3.forward);
         Assert.That(authored.TranslationMode, Is.EqualTo(PlayerMotorTranslationMode.DisplacementDriven));
         Assert.That(authored.PlanarDisplacement.z, Is.EqualTo(1f).Within(0.0001f));
         Assert.That(locomotion.TranslationMode, Is.EqualTo(PlayerMotorTranslationMode.VelocityDriven));
@@ -77,15 +74,15 @@ public class PlayerMotionContractTests
     }
 
     [Test]
-    public void ComposerCombinesEntrySourceAuthoredMotionAndTargetLocomotion()
+    public void ComposerCombinesOnlySourceAndTarget()
     {
         PlayerMotionDefinition definition = CreateDefinition(out PlayerMotionProfile profile);
         PlayerMovementConfig config = ScriptableObject.CreateInstance<PlayerMovementConfig>();
         PlayerGameplayIntent intent = PlayerGameplayIntent.Create(Vector3.forward, Vector3.forward);
         intent.LocomotionMode = PlayerLocomotionMode.Run;
-        PlayerMotionFrame frame = new PlayerMotionFrame(definition, profile, PlayerFoot.Left, Vector3.forward * 4f, 0f, 0f, 0f, 0.5f, 0.25f, true, 0.5f, Vector3.forward * 2f);
+        PlayerHandoffStep[] frame = { new PlayerHandoffStep { DeltaTime = 1f, HasSource = true, SourceWeight = 0.5f, SourceVelocity = Vector3.forward * 2f, TargetIsMotion = true, Target = new PlayerMotionFrame(definition, Vector3.forward * 4f, 0f, 0f, 0f, 0.5f) } };
         PlayerMotorCommand command = PlayerMotionComposer.Compose(intent, frame, MotorResult(Vector3.zero), config, 1f, Vector3.forward);
-        float expected = 2f * 0.5f + 4f * 0.5f * 0.25f + config.Locomotion.RunSpeed * 0.5f * 0.75f;
+        float expected = 2f * 0.5f + 4f * 0.5f;
         Assert.That(command.PlanarDisplacement.z, Is.EqualTo(expected).Within(0.0001f));
         Assert.That(command.TranslationMode, Is.EqualTo(PlayerMotorTranslationMode.DisplacementDriven));
         Destroy(config, definition, profile);
@@ -94,9 +91,9 @@ public class PlayerMotionContractTests
     [TestCase(30)]
     [TestCase(60)]
     [TestCase(120)]
-    public void ZeroLengthExitHandoffPreservesTotalAuthoredDistance(int fps)
+    public void StandaloneMotionPreservesTotalAuthoredDistance(int fps)
     {
-        PlayerMotionDefinition definition = CreateDefinition(out PlayerMotionProfile profile, 1f, 1f);
+        PlayerMotionDefinition definition = CreateDefinition(out PlayerMotionProfile profile);
         PlayerMovementConfig config = ScriptableObject.CreateInstance<PlayerMovementConfig>();
         PlayerMotionRuntime runtime = new PlayerMotionRuntime();
         PlayerGameplayIntent intent = PlayerGameplayIntent.Create(Vector3.forward, Vector3.forward);
@@ -185,11 +182,11 @@ public class PlayerMotionContractTests
         Assert.That(catalog.Validate(errors), Is.True, string.Join("\n", errors));
     }
 
-    private static PlayerMotionDefinition CreateDefinition(out PlayerMotionProfile profile, float exitStart = 0.8f, float exitEnd = 1f, float transitionLockEnd = 0f)
+    private static PlayerMotionDefinition CreateDefinition(out PlayerMotionProfile profile, float transitionLockEnd = 0f)
     {
         profile = CreateProfile(2f);
         PlayerMotionDefinition definition = ScriptableObject.CreateInstance<PlayerMotionDefinition>();
-        definition.Configure(profile, PlayerMotionTranslationPolicy.TravelAlongCapturedDirection, PlayerMotionRotationPolicy.FaceDirection, PlayerMotionBasisPolicy.DesiredDirection, 0f, 1f, exitStart, exitEnd, true, transitionLockEnd);
+        definition.Configure(profile, PlayerMotionTranslationPolicy.TravelAlongCapturedDirection, PlayerMotionRotationPolicy.FaceDirection, PlayerMotionBasisPolicy.DesiredDirection, 0f, 1f, true, transitionLockEnd);
         return definition;
     }
 

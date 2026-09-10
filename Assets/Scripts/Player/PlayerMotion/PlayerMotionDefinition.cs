@@ -70,19 +70,9 @@ public class PlayerMotionDefinition : ScriptableObject
     [Min(0f)] [SerializeField] private float durationOverride;
     //移动倍率
     [Min(0f)] [SerializeField] private float translationScale = 1f;
-    //进入 Finite Motion 时从源地面循环移交到 Motion
-    [Range(0f, 1f)] [SerializeField] private float entryHandoffEndProgress;
-    [SerializeField] private AnimationCurve entryTranslationWeight = AnimationCurve.Linear(0f, 0f, 1f, 1f);
-    //Finite Motion 结束时从烘焙位移移交到目标状态
-    [FormerlySerializedAs("handoffStartProgress")]
-    [Range(0f, 1f)] [SerializeField] private float exitHandoffStartProgress = 0.8f;
-    [FormerlySerializedAs("handoffEndProgress")]
-    [Range(0f, 1f)] [SerializeField] private float exitHandoffEndProgress = 1f;
     //状态转换承诺窗口；窗口只约束状态机何时接受普通请求，不拥有转换裁决权
     [Range(0f, 1f)] [SerializeField] private float transitionLockEndProgress;
     [SerializeField] private PlayerMotionInterruptedExitPolicy interruptedExitPolicy;
-    [FormerlySerializedAs("translationAuthority")]
-    [SerializeField] private AnimationCurve exitTranslationAuthority = AnimationCurve.Linear(0f, 1f, 1f, 0f);
     //是否需要对应的动画表现
     [SerializeField] private bool requiresPresentation = true;
 
@@ -98,10 +88,6 @@ public class PlayerMotionDefinition : ScriptableObject
     //可控制动画播放时间，若没设设定使用默认的动画时长
     public float Duration => GetDuration(PlayerFoot.Unknown);
     public float TranslationScale => translationScale;
-    public float EntryHandoffEndProgress => entryHandoffEndProgress;
-    public float ExitHandoffStartProgress => exitHandoffStartProgress;
-    public float ExitHandoffEndProgress => exitHandoffEndProgress;
-    public bool HasEntryHandoff => entryHandoffEndProgress > 0f;
     public float TransitionLockEndProgress => transitionLockEndProgress;
     public PlayerMotionInterruptedExitPolicy InterruptedExitPolicy => interruptedExitPolicy;
     public bool RequiresPresentation => requiresPresentation;
@@ -124,34 +110,6 @@ public class PlayerMotionDefinition : ScriptableObject
     public float GetDuration(PlayerFoot foot) => durationOverride > 0f ? durationOverride : ResolveProfile(foot)?.Duration ?? 0f;
     public float GetDuration(PlayerMotionProfile selectedProfile) => durationOverride > 0f ? durationOverride : selectedProfile?.Duration ?? 0f;
     /// <summary>
-    /// 将 Entry Handoff 的过程从 0-EntryEnd 重映射为 0-1
-    /// </summary>
-    public float CalculateEntryHandoffProgress(float motionProgress)
-    {
-        if (entryHandoffEndProgress <= 0f) return 1f;
-        return Mathf.Clamp01(motionProgress / entryHandoffEndProgress);
-    }
-    /// <summary>
-    /// 位移混合0为动画，1为motion
-    /// </summary>
-    public float EvaluateEntryTranslationWeight(float motionProgress)
-    {
-        float handoffProgress = CalculateEntryHandoffProgress(motionProgress);
-        return Mathf.Clamp01(entryTranslationWeight == null ? handoffProgress : entryTranslationWeight.Evaluate(handoffProgress));
-    }
-
-    /// <summary>
-    /// 将 Exit Handoff 的过程从 Start-End 重映射为 0-1
-    /// </summary>
-    public float CalculateExitHandoffProgress(float motionProgress)
-    {
-        if (exitHandoffEndProgress <= exitHandoffStartProgress) return motionProgress >= exitHandoffEndProgress ? 1f : 0f;
-        //过程相对于整体0-1映射
-        return Mathf.Clamp01((motionProgress - exitHandoffStartProgress) / (exitHandoffEndProgress - exitHandoffStartProgress));
-    }
-
-    public float EvaluateExitTranslationAuthority(float motionProgress) => EvaluateAuthority(exitTranslationAuthority, motionProgress);
-    /// <summary>
     /// 数据校验
     /// </summary>
     public bool Validate(ICollection<string> errors)
@@ -166,16 +124,6 @@ public class PlayerMotionDefinition : ScriptableObject
         if (usePhaseFootSelection) valid &= ValidatePhaseFootSelection(errors);
         if (float.IsNaN(Duration) || float.IsInfinity(Duration) || Duration <= 0f) { errors?.Add(name + ": Runtime Duration 必须是大于 0 的有限值。"); valid = false; }
         if (float.IsNaN(translationScale) || float.IsInfinity(translationScale)) { errors?.Add(name + ": TranslationScale 必须是有限值。"); valid = false; }
-        bool progressValuesValid = true;
-        if (!IsFiniteProgress(entryHandoffEndProgress)) { errors?.Add(name + ": EntryHandoffEndProgress 必须是 0 到 1 的有限值。"); valid = false; progressValuesValid = false; }
-        if (!IsFiniteProgress(exitHandoffStartProgress)) { errors?.Add(name + ": ExitHandoffStartProgress 必须是 0 到 1 的有限值。"); valid = false; progressValuesValid = false; }
-        if (!IsFiniteProgress(exitHandoffEndProgress)) { errors?.Add(name + ": ExitHandoffEndProgress 必须是 0 到 1 的有限值。"); valid = false; progressValuesValid = false; }
-        if (progressValuesValid && (entryHandoffEndProgress > exitHandoffStartProgress || exitHandoffStartProgress > exitHandoffEndProgress))
-        {
-            errors?.Add(name + ": Handoff 进度必须满足 0 <= EntryHandoffEndProgress <= ExitHandoffStartProgress <= ExitHandoffEndProgress <= 1。");
-            valid = false;
-        }
-        valid &= ValidateEntryTranslationWeight(errors);
         if (translationPolicy == PlayerMotionTranslationPolicy.SteeredLocalTrajectory)
         {
             if (rotationPolicy != PlayerMotionRotationPolicy.ProfileYaw || basisPolicy != PlayerMotionBasisPolicy.EntryFacing) { errors?.Add(name + ": SteeredLocalTrajectory 需要 ProfileYaw + EntryFacing。"); valid = false; }
@@ -234,7 +182,7 @@ public class PlayerMotionDefinition : ScriptableObject
     /// Unity 编辑器中配置轨迹、状态锁承诺窗口和中断表现策略。
     /// </summary>
     public void Configure(PlayerMotionProfile motionProfile, PlayerMotionTranslationPolicy translation, PlayerMotionRotationPolicy rotation, PlayerMotionBasisPolicy basis, 
-        float runtimeDuration, float scale, float exitHandoffStart, float exitHandoffEnd, bool presentation = true, float transitionLockEndProgress = 0f, PlayerMotionInterruptedExitPolicy interruptedExitPolicy = PlayerMotionInterruptedExitPolicy.ResolveNormalTransitionMotion, bool requireFootProfiles = false)
+        float runtimeDuration, float scale, bool presentation = true, float transitionLockEndProgress = 0f, PlayerMotionInterruptedExitPolicy interruptedExitPolicy = PlayerMotionInterruptedExitPolicy.ResolveNormalTransitionMotion, bool requireFootProfiles = false)
     {
         profile = motionProfile;
         translationPolicy = translation;
@@ -242,21 +190,10 @@ public class PlayerMotionDefinition : ScriptableObject
         basisPolicy = basis;
         durationOverride = runtimeDuration;
         translationScale = scale;
-        entryHandoffEndProgress = 0f;
-        entryTranslationWeight = AnimationCurve.Linear(0f, 0f, 1f, 1f);
-        exitHandoffStartProgress = exitHandoffStart;
-        exitHandoffEndProgress = exitHandoffEnd;
         this.transitionLockEndProgress = transitionLockEndProgress;
         this.interruptedExitPolicy = interruptedExitPolicy;
         requiresPresentation = presentation;
         requiresFootProfiles = requireFootProfiles;
-        exitTranslationAuthority = AnimationCurve.Linear(0f, 1f, 1f, 0f);
-    }
-
-    public void ConfigureEntryHandoff(float endProgress, AnimationCurve targetTranslationWeight = null)
-    {
-        entryHandoffEndProgress = endProgress;
-        entryTranslationWeight = targetTranslationWeight ?? AnimationCurve.Linear(0f, 0f, 1f, 1f);
     }
 
     public void ConfigureFootProfiles(PlayerMotionProfile left, PlayerMotionProfile right, bool requireProfiles)
@@ -266,42 +203,4 @@ public class PlayerMotionDefinition : ScriptableObject
         requiresFootProfiles = requireProfiles;
     }
 #endif
-    /// <summary>
-    /// 依据过渡进程返回动画控制权重
-    /// </summary>
-    private float EvaluateAuthority(AnimationCurve curve, float motionProgress)
-    {
-        //零长度移交没有混合区间，由动画位移负责到完成帧结束
-        if (exitHandoffEndProgress <= exitHandoffStartProgress) return 1f;
-        //未开始时完全动画掌控
-        if (motionProgress < exitHandoffStartProgress) return 1f;
-        //完全结束后交给程序掌控
-        if (motionProgress >= exitHandoffEndProgress) return 0f;
-        //拿到0-1映射
-        float handoff = CalculateExitHandoffProgress(motionProgress);
-        
-        return Mathf.Clamp01(curve == null ? 1f - handoff : curve.Evaluate(handoff));
-    }
-
-    private bool ValidateEntryTranslationWeight(ICollection<string> errors)
-    {
-        if (entryTranslationWeight == null)
-        {
-            errors?.Add(name + ": EntryTranslationWeight 曲线不能为空。");
-            return false;
-        }
-        float start = entryTranslationWeight.Evaluate(0f);
-        float end = entryTranslationWeight.Evaluate(1f);
-        if (float.IsNaN(start) || float.IsInfinity(start) || !Mathf.Approximately(start, 0f) || float.IsNaN(end) || float.IsInfinity(end) || !Mathf.Approximately(end, 1f))
-        {
-            errors?.Add(name + ": EntryTranslationWeight 曲线端点必须为 0 和 1。");
-            return false;
-        }
-        return true;
-    }
-
-    private static bool IsFiniteProgress(float value)
-    {
-        return !float.IsNaN(value) && !float.IsInfinity(value) && value >= 0f && value <= 1f;
-    }
 }

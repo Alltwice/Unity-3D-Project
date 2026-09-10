@@ -44,6 +44,25 @@ public struct PlayerMotionCatalogEntry
 public class PlayerMotionCatalog : ScriptableObject
 {
     [SerializeField] private List<PlayerMotionCatalogEntry> motions = new List<PlayerMotionCatalogEntry>();
+    [SerializeField] private List<PlayerHandoffDefinition> handoffs = new List<PlayerHandoffDefinition>();
+    public IReadOnlyList<PlayerHandoffDefinition> Handoffs => handoffs;
+    public PlayerMotionId GetId(PlayerMotionDefinition definition)
+    {
+        foreach (PlayerMotionCatalogEntry entry in motions) if (entry.Definition == definition) return entry.Id;
+        throw new InvalidOperationException("Motion Definition 不在 Catalog 中。");
+    }
+    public PlayerHandoffDefinition GetHandoff(PlayerMotionNodeKey source, PlayerMotionNodeKey target, PlayerHandoffTriggerMode trigger)
+    {
+        foreach (PlayerHandoffDefinition handoff in handoffs)
+            if (handoff.Source.Equals(source) && handoff.Target.Equals(target) && handoff.TriggerMode == trigger) return handoff;
+        throw new InvalidOperationException("缺少 Handoff: " + source + " -> " + target + " (" + trigger + ")");
+    }
+    public PlayerHandoffDefinition GetSuccessor(PlayerMotionNodeKey source)
+    {
+        foreach (PlayerHandoffDefinition handoff in handoffs)
+            if (handoff.Source.Equals(source) && handoff.TriggerMode == PlayerHandoffTriggerMode.SourceProgress) return handoff;
+        return null;
+    }
     [SerializeField] private List<PlayerLocomotionCycleDefinition> locomotionCycles = new List<PlayerLocomotionCycleDefinition>();
     [Range(90f, 180f)] [SerializeField] private float turn180Threshold = 150f;
 
@@ -81,6 +100,17 @@ public class PlayerMotionCatalog : ScriptableObject
     public bool Validate(ICollection<string> errors)
     {
         bool valid = true;
+        HashSet<string> relations = new HashSet<string>();
+        HashSet<PlayerMotionNodeKey> successors = new HashSet<PlayerMotionNodeKey>();
+        foreach (PlayerHandoffDefinition handoff in handoffs)
+        {
+            if (handoff == null) { errors?.Add(name + ": Handoff 引用缺失。"); valid = false; continue; }
+            valid &= handoff.Validate(errors);
+            if (!relations.Add(handoff.Source + ":" + handoff.Target + ":" + handoff.TriggerMode)) { errors?.Add(name + ": Handoff 关系重复。"); valid = false; }
+            if (handoff.TriggerMode == PlayerHandoffTriggerMode.SourceProgress && !successors.Add(handoff.Source)) { errors?.Add(name + ": 默认后继重复。"); valid = false; }
+            foreach (PlayerMotionNodeKey node in new[] { handoff.Source, handoff.Target })
+                if (node.IsMotion ? !TryGet(node.Motion, out _) : node.Locomotion != PlayerLocomotionMode.Idle && !TryGetCycle(node.Locomotion, out _)) { errors?.Add(name + ": Handoff 节点缺失 " + node); valid = false; }
+        }
         HashSet<PlayerMotionId> motionIds = new HashSet<PlayerMotionId>();
         for (int i = 0; i < motions.Count; i++)
         {
@@ -106,6 +136,11 @@ public class PlayerMotionCatalog : ScriptableObject
     }
 
 #if UNITY_EDITOR
+    public void ConfigureHandoffs(IEnumerable<PlayerHandoffDefinition> relations)
+    {
+        handoffs.Clear();
+        handoffs.AddRange(relations);
+    }
     public void Configure(IEnumerable<PlayerMotionCatalogEntry> entries, float turnThreshold)
     {
         motions.Clear();

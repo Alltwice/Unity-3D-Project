@@ -1,9 +1,44 @@
 using UnityEngine;
 /// <summary>
-/// 整合运动数据和输入意图为最终的运动命令
+/// 整合运动数据和输入意图为最终的运动命令，消费混合数据生成位移命令
 /// </summary>
 public static class PlayerMotionComposer
 {
+    public static PlayerMotorCommand Compose(PlayerGameplayIntent intent, System.Collections.Generic.IReadOnlyList<PlayerHandoffStep> steps, PlayerMotorResult previousMotorResult, PlayerMovementConfig config, float deltaTime, Vector3 currentFacing)
+    {
+        if (intent.HasPlanarVelocityOverride || steps.Count == 0) return Compose(intent, default(PlayerMotionFrame), previousMotorResult, config, deltaTime, currentFacing);
+        Vector3 velocity = previousMotorResult.HorizontalVelocity;
+        Vector3 displacement = Vector3.zero;
+        PlayerMotorRotationMode rotation = PlayerMotorRotationMode.None;
+        Vector3 facing = intent.DesiredFacingDirection;
+        float yaw = 0f;
+        bool hasRotation = false;
+        foreach (PlayerHandoffStep step in steps)
+        {
+            velocity = CalculateVelocity(velocity, intent.DesiredMoveDirection * ResolveSpeed(intent.LocomotionMode, config.Locomotion), intent.LocomotionMode, config.Locomotion, step.DeltaTime);
+            ResolveRotation(intent, step.Target, currentFacing, out rotation, out facing, out float stepYaw);
+            if (rotation == PlayerMotorRotationMode.FaceDirection)
+            {
+                float error = Vector3.SignedAngle(Vector3.ProjectOnPlane(currentFacing, Vector3.up), Vector3.ProjectOnPlane(facing, Vector3.up), Vector3.up);
+                stepYaw = error * (1f - Mathf.Exp(-config.Locomotion.RotationSmoothSpeed * step.DeltaTime));
+            }
+            Vector3 target = step.TargetIsMotion && (!step.Target.IsValid || step.Target.Definition.TranslationPolicy != PlayerMotionTranslationPolicy.VelocityDriven) ? step.Target.AuthoredPlanarDisplacement : velocity * step.DeltaTime;
+            if (step.Target.IsValid && step.Target.Definition.TranslationPolicy == PlayerMotionTranslationPolicy.SteeredLocalTrajectory)
+            {
+                float correction = Vector3.SignedAngle(step.Target.AuthoredFacingBeforeStep, Vector3.ProjectOnPlane(currentFacing, Vector3.up), Vector3.up);
+                target = Quaternion.AngleAxis(correction + (stepYaw - step.Target.AuthoredYawDelta) * 0.5f, Vector3.up) * target;
+            }
+            Vector3 source = step.SourceIsMotion && step.Source.IsValid && step.Source.Definition.TranslationPolicy != PlayerMotionTranslationPolicy.VelocityDriven ? step.Source.AuthoredPlanarDisplacement : step.SourceVelocity * step.DeltaTime;
+            displacement += source * step.SourceWeight + target * (1f - step.SourceWeight);
+            yaw += stepYaw;
+            hasRotation |= rotation != PlayerMotorRotationMode.None;
+            currentFacing = Quaternion.AngleAxis(stepYaw, Vector3.up) * currentFacing;
+        }
+        return new PlayerMotorCommand(PlayerMotorTranslationMode.DisplacementDriven, velocity, 0f, displacement, hasRotation ? PlayerMotorRotationMode.YawDelta : PlayerMotorRotationMode.None, facing, yaw, intent.HasVerticalImpulse, intent.VerticalImpulse);
+    }
+    /// <summary>
+    /// 消费一般数据生成位移命令
+    /// </summary>
     public static PlayerMotorCommand Compose(PlayerGameplayIntent intent, PlayerMotionFrame motionFrame, PlayerMotorResult previousMotorResult, PlayerMovementConfig config, float deltaTime, Vector3 currentFacing)
     {
         if (intent.HasPlanarVelocityOverride)
@@ -21,11 +56,6 @@ public static class PlayerMotionComposer
         //烘焙和程序混合态时的位移信息
         if (motionFrame.IsValid && motionFrame.Definition.TranslationPolicy != PlayerMotionTranslationPolicy.VelocityDriven)
         {
-            float entryTargetWeight = motionFrame.EntryHandoffActive ? Mathf.Clamp01(motionFrame.EntryTargetTranslationWeight) : 1f;
-            float exitSourceWeight = Mathf.Clamp01(motionFrame.ExitTranslationAuthority);
-            float entrySourceWeight = 1f - entryTargetWeight;
-            float authoredWeight = entryTargetWeight * exitSourceWeight;
-            float targetLocomotionWeight = entryTargetWeight * (1f - exitSourceWeight);
             Vector3 authoredDisplacement = motionFrame.AuthoredPlanarDisplacement;
             if (motionFrame.Definition.TranslationPolicy == PlayerMotionTranslationPolicy.SteeredLocalTrajectory)
             {
@@ -35,10 +65,8 @@ public static class PlayerMotionComposer
                 //用帧内修正中点旋转位移增量，动画自身的 Yaw 不重复应用
                 authoredDisplacement = Quaternion.AngleAxis(existingCorrection + stepCorrection * 0.5f, Vector3.up) * authoredDisplacement;
             }
-            displacement = motionFrame.EntrySourcePlanarVelocity * deltaTime * entrySourceWeight
-                + authoredDisplacement * authoredWeight
-                + predictedVelocity * deltaTime * targetLocomotionWeight;
-            if (entrySourceWeight > 0f || authoredWeight > 0f) translationMode = PlayerMotorTranslationMode.DisplacementDriven;
+            displacement = authoredDisplacement;
+            translationMode = PlayerMotorTranslationMode.DisplacementDriven;
         }
         float acceleration = ResolveAcceleration(previousMotorResult.HorizontalVelocity, targetVelocity, intent.LocomotionMode, config.Locomotion);
         return new PlayerMotorCommand(translationMode, targetVelocity, acceleration, displacement, rotationMode, facingDirection, yawDelta, intent.HasVerticalImpulse, intent.VerticalImpulse);
