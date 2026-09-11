@@ -35,7 +35,7 @@ public enum PlayerMotorRotationMode
 }
 
 /// <summary>
-/// 玩家输入意图
+/// 玩家已解析的移动与朝向意图
 /// </summary>
 public struct PlayerGameplayIntent
 {
@@ -48,19 +48,20 @@ public struct PlayerGameplayIntent
     public Vector3 PlanarVelocityOverride;
     public float PlanarVelocityDuration;
     /// <summary>
-    /// 建立输入意图
+    /// 使用已经解析的平移与朝向建立输入意图
     /// </summary>
-    public static PlayerGameplayIntent Create(Vector3 desiredMoveDirection, Vector3 currentFacing)
+    public static PlayerGameplayIntent Create(Vector3 desiredMoveDirection, Vector3 desiredFacingDirection)
     {
         desiredMoveDirection.y = 0f;
-        currentFacing.y = 0f;
+        desiredFacingDirection.y = 0f;
         if (desiredMoveDirection.sqrMagnitude > 1f) desiredMoveDirection.Normalize();
+        if (desiredFacingDirection.sqrMagnitude > 0.0001f) desiredFacingDirection.Normalize();
         return new PlayerGameplayIntent
         {
             //返回的是默认安全值
             LocomotionMode = PlayerLocomotionMode.Idle,
             DesiredMoveDirection = desiredMoveDirection,
-            DesiredFacingDirection = desiredMoveDirection.sqrMagnitude > 0.0001f ? desiredMoveDirection.normalized : currentFacing.normalized
+            DesiredFacingDirection = desiredFacingDirection
         };
     }
     /// <summary>

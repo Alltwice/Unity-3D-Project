@@ -13,6 +13,7 @@ public class PlayerInputReader : MonoBehaviour, IPlayerInputSource
     public Vector2 LookInput { get; private set; }
     //WalkToggle 的当前信号，不代表 Gameplay 当前有效的 Walk 模式。
     public bool IsWalkMode { get; private set; }
+    public PlayerFacingMode FacingMode { get; private set; } = PlayerFacingMode.MovementAligned;
 
     private void Awake()
     {
@@ -46,6 +47,7 @@ public class PlayerInputReader : MonoBehaviour, IPlayerInputSource
         MoveInput = Vector2.zero;
         LookInput = Vector2.zero;
         IsWalkMode = false;
+        FacingMode = PlayerFacingMode.MovementAligned;
         actionBuffer?.Clear(PlayerBufferedAction.Jump);
         actionBuffer?.Clear(PlayerBufferedAction.Dodge);
     }
@@ -64,6 +66,7 @@ public class PlayerInputReader : MonoBehaviour, IPlayerInputSource
         inputActions.Player.Jump.started += OnJumpStarted;
         inputActions.Player.Dodge.started += OnDodgeStarted;
         inputActions.Player.WalkToggle.started += OnWalkToggleStarted;
+        inputActions.Player.FacingModeToggle.started += OnFacingModeToggleStarted;
     }
 
     private void UnregisterInputCallbacks()
@@ -75,6 +78,7 @@ public class PlayerInputReader : MonoBehaviour, IPlayerInputSource
         inputActions.Player.Jump.started -= OnJumpStarted;
         inputActions.Player.Dodge.started -= OnDodgeStarted;
         inputActions.Player.WalkToggle.started -= OnWalkToggleStarted;
+        inputActions.Player.FacingModeToggle.started -= OnFacingModeToggleStarted;
     }
 
     private void OnMovePerformed(InputAction.CallbackContext context) => MoveInput = context.ReadValue<Vector2>();
@@ -84,4 +88,5 @@ public class PlayerInputReader : MonoBehaviour, IPlayerInputSource
     private void OnJumpStarted(InputAction.CallbackContext context) => actionBuffer.Buffer(PlayerBufferedAction.Jump);
     private void OnDodgeStarted(InputAction.CallbackContext context) => actionBuffer.Buffer(PlayerBufferedAction.Dodge);
     private void OnWalkToggleStarted(InputAction.CallbackContext context) => IsWalkMode = !IsWalkMode;
+    private void OnFacingModeToggleStarted(InputAction.CallbackContext context) => FacingMode = FacingMode == PlayerFacingMode.MovementAligned ? PlayerFacingMode.Independent : PlayerFacingMode.MovementAligned;
 }

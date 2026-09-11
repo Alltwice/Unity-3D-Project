@@ -62,15 +62,16 @@ public class PlayerSimulationDriver : MonoBehaviour
         dodge.TickCooldown(deltaTime);
         Vector2 moveInput = inputSource.MoveInput;
         bool hasRawMoveInput = moveInput != Vector2.zero;
-        Vector3 rawWorldDirection = ResolveWorldMoveDirection(moveInput);
+        PlayerFacingMode facingMode = inputSource.FacingMode;
+        ResolveCameraHorizontalBasis(out Vector3 cameraForward, out Vector3 cameraRight);
+        Vector3 rawWorldDirection = ResolveWorldMoveDirection(moveInput, cameraForward, cameraRight);
+        motionPlanner.SynchronizeFacingMode(facingMode, stateController.CurrentLocomotionMode, motor.CurrentResult);
         //零输入延迟检测
         stateController.UpdateLocomotionIntent(deltaTime);
         stateController.SetSimulationFacts(motor.CurrentResult, motionPlanner.Snapshot, default);
         PlayerStateTransition? transition = stateController.ProcessPreTickTransition();
         //建立输入意图
-        Vector3 effectiveMoveDirection = ResolveEffectiveMoveDirection(rawWorldDirection, hasRawMoveInput);
-        PlayerGameplayIntent intent = PlayerGameplayIntent.Create(effectiveMoveDirection, transform.forward);
-        intent.LocomotionMode = stateController.CurrentLocomotionMode;
+        PlayerGameplayIntent intent = BuildIntent(rawWorldDirection, hasRawMoveInput, cameraForward, facingMode);
         //可空类型和一般类型完全是两个东西，需要通过.value获取
         if (transition.HasValue) motionPlanner.HandleStateTransition(transition.Value, intent, motor.CurrentResult);
         else if (pendingTransition.HasValue) motionPlanner.HandleStateTransition(pendingTransition.Value, intent, motor.CurrentResult);
@@ -92,9 +93,7 @@ public class PlayerSimulationDriver : MonoBehaviour
         PlayerGameplayIntent postTransitionIntent = default;
         if (resultTransition.HasValue)
         {
-            Vector3 postTransitionMoveDirection = ResolveEffectiveMoveDirection(rawWorldDirection, hasRawMoveInput);
-            postTransitionIntent = PlayerGameplayIntent.Create(postTransitionMoveDirection, transform.forward);
-            postTransitionIntent.LocomotionMode = stateController.CurrentLocomotionMode;
+            postTransitionIntent = BuildIntent(rawWorldDirection, hasRawMoveInput, cameraForward, facingMode);
             motionPlanner.HandleStateTransition(resultTransition.Value, postTransitionIntent, motorResult);
         }
         PlayerStateTransition? presentationTransition = resultTransition ?? transition ?? pendingTransition;
@@ -146,17 +145,30 @@ public class PlayerSimulationDriver : MonoBehaviour
         return stateType == typeof(PlayerIdleState) || stateType == typeof(PlayerWalkState) || stateType == typeof(PlayerRunState) || stateType == typeof(PlayerFastRunState);
     }
 
-    private Vector3 ResolveWorldMoveDirection(Vector2 moveInput)
+    private PlayerGameplayIntent BuildIntent(Vector3 rawWorldDirection, bool hasRawMoveInput, Vector3 cameraForward, PlayerFacingMode facingMode)
+    {
+        Vector3 effectiveMoveDirection = ResolveEffectiveMoveDirection(rawWorldDirection, hasRawMoveInput);
+        Vector3 desiredFacingDirection = facingMode == PlayerFacingMode.Independent ? cameraForward : effectiveMoveDirection.sqrMagnitude > 0.0001f ? effectiveMoveDirection.normalized : transform.forward;
+        PlayerGameplayIntent intent = PlayerGameplayIntent.Create(effectiveMoveDirection, desiredFacingDirection);
+        intent.LocomotionMode = stateController.CurrentLocomotionMode;
+        return intent;
+    }
+
+    private Vector3 ResolveWorldMoveDirection(Vector2 moveInput, Vector3 cameraForward, Vector3 cameraRight)
     {
         Vector3 input = new Vector3(moveInput.x, 0f, moveInput.y);
         if (input.sqrMagnitude > 1f) input.Normalize();
-        Vector3 forward = movementReference.forward;
-        Vector3 right = movementReference.right;
-        forward.y = 0f;
-        right.y = 0f;
-        forward.Normalize();
-        right.Normalize();
-        Vector3 worldDirection = forward * input.z + right * input.x;
+        Vector3 worldDirection = cameraForward * input.z + cameraRight * input.x;
         return worldDirection.sqrMagnitude > 1f ? worldDirection.normalized : worldDirection;
+    }
+
+    private void ResolveCameraHorizontalBasis(out Vector3 forward, out Vector3 right)
+    {
+        forward = Vector3.ProjectOnPlane(movementReference.forward, Vector3.up);
+        right = Vector3.ProjectOnPlane(movementReference.right, Vector3.up);
+        if (forward.sqrMagnitude < 0.0001f) forward = right.sqrMagnitude >= 0.0001f ? Vector3.Cross(right, Vector3.up) : Vector3.forward;
+        forward.Normalize();
+        right = Vector3.Cross(Vector3.up, forward);
+        right.Normalize();
     }
 }

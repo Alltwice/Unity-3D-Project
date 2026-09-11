@@ -9,6 +9,7 @@ public class PlayerMotionPlanner : MonoBehaviour
     [SerializeField] private PlayerMotionCatalog catalog;
 
     private PlayerHandoffRuntime runtime;
+    private PlayerFacingMode facingMode = PlayerFacingMode.MovementAligned;
     public PlayerHandoffSnapshot HandoffSnapshot => runtime.Snapshot;
     private PlayerLocomotionPhaseRuntime phaseRuntime;
 
@@ -33,6 +34,22 @@ public class PlayerMotionPlanner : MonoBehaviour
 
     public void BeginFrame() => runtime.BeginFrame();
 
+    /// <summary>
+    /// 在写入本帧 Motion facts 前清理进入 Independent 后不再使用的地面 Motion
+    /// </summary>
+    public void SynchronizeFacingMode(PlayerFacingMode nextFacingMode, PlayerLocomotionMode currentLocomotionMode, PlayerMotorResult motorResult)
+    {
+        if (facingMode == nextFacingMode) return;
+        bool enteringIndependent = nextFacingMode == PlayerFacingMode.Independent;
+        facingMode = nextFacingMode;
+        if (!enteringIndependent || !IsGroundState(currentLocomotionMode)) return;
+
+        PlayerHandoffSnapshot handoff = runtime.Snapshot;
+        if (!handoff.HasTarget || (!handoff.Source.Key.IsMotion && !handoff.Target.Key.IsMotion)) return;
+        PlayerFoot foot = PhaseSnapshot.LastPlantFoot;
+        runtime.SetImmediate(PlayerMotionNodeKey.ForLoop(currentLocomotionMode), foot, transform.forward, transform.forward, motorResult.HorizontalVelocity);
+    }
+
     public void HandleStateTransition(PlayerStateTransition transition, PlayerGameplayIntent intent, PlayerMotorResult motorResult)
     {
         if (transition.PreviousStateType == typeof(PlayerAirState) || transition.PreviousStateType == typeof(PlayerHardLandingState))
@@ -41,6 +58,11 @@ public class PlayerMotionPlanner : MonoBehaviour
             return;
         }
         if (transition.CurrentStateType == typeof(PlayerAirState) || transition.CurrentStateType == typeof(PlayerDodgeState) || transition.CurrentStateType == typeof(PlayerHardLandingState)) { runtime.Clear(); return; }
+        if (facingMode == PlayerFacingMode.Independent && IsGroundState(intent.LocomotionMode))
+        {
+            RequestLoop(intent, motorResult);
+            return;
+        }
         if (TryResolveTargetTransitionMotion(transition, intent, out PlayerMotionDefinition definition))
         {
             Begin(definition, intent, motorResult);
@@ -61,10 +83,11 @@ public class PlayerMotionPlanner : MonoBehaviour
         RequestLoop(intent, motorResult);
     }
     /// <summary>
-    /// 处理了左右转向的动画
+    /// 处理普通模式的 180° 转向 Motion；Independent 使用速度移动，不进入方向差 Motion
     /// </summary>
     public void ResolveContinuousMotion(Type stateType, PlayerGameplayIntent intent, PlayerMotorResult motorResult)
     {
+        if (facingMode == PlayerFacingMode.Independent) return;
         if (runtime.MotionSnapshot.IsActive || intent.DesiredMoveDirection.sqrMagnitude < 0.0001f) return;
         PlayerMotionId left;
         PlayerMotionId right;
@@ -169,5 +192,10 @@ public class PlayerMotionPlanner : MonoBehaviour
         from.y = 0f;
         to.y = 0f;
         return from.sqrMagnitude < 0.0001f || to.sqrMagnitude < 0.0001f ? 0f : Vector3.SignedAngle(from, to, Vector3.up);
+    }
+
+    private static bool IsGroundState(PlayerLocomotionMode mode)
+    {
+        return mode == PlayerLocomotionMode.Idle || PlayerLocomotionCycleDefinition.IsGroundLoopMode(mode);
     }
 }

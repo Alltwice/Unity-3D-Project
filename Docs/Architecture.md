@@ -1,7 +1,7 @@
 # Architecture
 
 > 本文记录项目当前较稳定的职责边界、依赖方向和核心运行流  
-> 最后核对的运行时代码基线：当前工作树（2026-09-10，包含本次 Handoff 配置归并）
+> 最后核对的运行时代码基线：当前工作树（2026-09-11，包含 Handoff 配置归并与 FacingMode 接入）
 
 ## 1. 当前架构概览
 
@@ -76,6 +76,10 @@ PlayerInputReader ──► PlayerActionBuffer
 ```text
 Action Buffer / Motion 帧事件 / Dodge Cooldown 更新
     ↓
+读取 FacingMode 与相机水平基准
+    ↓
+Motion Planner 同步 FacingMode，清理不兼容的地面 Motion
+    ↓
 解析世界移动方向并更新地面移动意图
     ↓
 写入上一帧 Motor / Motion 事实
@@ -120,8 +124,11 @@ AnimationController 消费最终事实并手动评估 Animancer
 `PlayerInputReader` 负责 Unity Input System 边界：
 
 - 持续输入通过 `IPlayerInputSource` 暴露
+- `IPlayerInputSource.FacingMode` 由 `PlayerInputReader` 以 `Player/FacingModeToggle` 的一次按下切换，默认是 `MovementAligned`，禁用时重置
 - Jump / Dodge 等离散操作写入 `IPlayerActionBuffer`
 - `PlayerActionBuffer` 在输入回调时机与 Gameplay 模拟时机之间保存短时动作请求
+
+`Player/FacingModeToggle` 使用 `<Mouse>/rightButton` 的 Press 绑定；`UI/RightClick` 仍是独立的 UI Action，不参与 Gameplay 朝向模式切换。
 
 当前上层 Gameplay 通过 `IPlayerInputSource` / `IPlayerActionBuffer` 与输入实现交互。
 
@@ -188,6 +195,8 @@ EvaluateResultTransition
 ### 地面移动意图与 Dodge
 
 `PlayerContext` 维护零输入宽限计时及 `HasGroundMoveContinuationIntent`，当前默认宽限为 0.1 秒；`PlayerStateController` 暴露该事实。Driver 在 Pre-Tick 状态转换后解析有效移动方向：Walk / Run / FastRun 中有原始输入时缓存完整世界方向（保留输入幅值），短暂零输入且仍有延续意图时复用缓存；退出这些模式、宽限失效、Init 或 OnDisable 时清理缓存。Post-Tick 转换后以新状态再次解析方向。原始输入仍由 InputSource 保留，Dodge 完成后的 Idle / FastRun 选择读取原始输入。
+
+Driver 每帧读取一次 `FacingMode` 和相机水平 Forward / Right，并由统一的意图入口分别生成 `DesiredMoveDirection` 与 `DesiredFacingDirection`：`MovementAligned` 在有有效移动时面向移动方向、无移动时保持角色水平朝向；`Independent` 始终面向相机水平 Forward。移动和朝向共用同一相机水平基准；相机 Forward 水平投影接近零时由相机 Right 推导。Pre-Tick 与 Post-Tick 使用同一基准，Post-Tick 按新 Gameplay 状态重新应用地面零输入宽限结果。
 
 `PlayerDodgeState` 调用 `PlayerDodge.Begin / Tick / End`，以能力的 Duration 决定完成，以 Progress 提供表现时间。能力在有输入时更新方向，无输入时保持已选方向（首次使用朝向），并向 Intent 写入速度与本帧有效移动时长；Composer 优先生成 ImmediateVelocityDriven 命令，Motor 执行移动。最后一帧仅积分剩余 Dodge 时长，退出时开始冷却。Dodge 本体不经过 MotionProfile 推进。
 
@@ -269,6 +278,7 @@ Catalog 还按 `LocomotionMode` 保存 Idle、Walk、Run、FastRun 的 Loop 进�
 
 - 状态进入 / 退出 Motion 解析
 - Start / Stop / 180° Turn，以及 Dodge 完成后的 `DodgeToIdle` Motion 或 `FastRunLoop` 目标选择
+- Independent 下地面状态直接请求对应 Loop，跳过 Start / Stop / Turn180；进入该模式时清理 Handoff Source / Target 中仍在途的地面 Motion
 - 根据 Foot Phase 选择对应 Foot Profile
 - 根据已批准的状态转换请求目标，HandoffRuntime 保留源采样实例及切换时平面速度
 - 驱动 `PlayerMotionRuntime`
@@ -324,6 +334,8 @@ PlayerMotorResult
 ### PlayerMotionComposer
 
 `PlayerMotionComposer` 是 Gameplay 常规移动与烘焙 Motion 之间的合成边界。
+
+`PlayerGameplayIntent` 分别保存 `LocomotionMode`、`DesiredMoveDirection` 与 `DesiredFacingDirection`；意图创建时两个方向都由 Driver 传入，`Create` 不再用移动方向隐式覆盖目标朝向。
 
 `SteeredLocalTrajectory` 使用 `ProfileYaw + EntryFacing`：Runtime 保留原始局部轨迹位移，并通过 Frame 提供相对本次开始 Yaw 的帧前理论世界朝向。Composer 用实际朝向与理论朝向之差恢复已有修正，叠加本帧额外 Yaw 修正的一半来旋转动画位移增量；动画自身 Yaw 不重复应用，源 SteeredLocalTrajectory 保留降为来源时的朝向修正。Composer 不保存跨帧修正状态，现有资产不自动切换此策略。
 
