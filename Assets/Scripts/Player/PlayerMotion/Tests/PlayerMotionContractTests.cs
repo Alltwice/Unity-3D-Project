@@ -8,19 +8,16 @@ public class PlayerMotionContractTests
     [Test]
     public void HandoffResolvesDurationAndWeightEndpoints()
     {
-        PlayerHandoffBlendSettings blend = new PlayerHandoffBlendSettings(PlayerHandoffDurationMode.TargetMotionRatio, 0.2f, AnimationCurve.Linear(0f, 0f, 1f, 1f), AnimationCurve.Linear(0f, 0f, 1f, 1f));
-        Assert.That(blend.ResolveDuration(0f, 2f), Is.EqualTo(0.4f).Within(0.0001f));
-        Assert.That(blend.EvaluateTranslation(0f), Is.Zero);
-        Assert.That(blend.EvaluateTranslation(1f), Is.EqualTo(1f));
+        PlayerHandoffSettings settings = new PlayerHandoffSettings(0.4f, AnimationCurve.Linear(0f, 0f, 1f, 1f));
+        Assert.That(settings.Duration, Is.EqualTo(0.4f).Within(0.0001f));
+        Assert.That(settings.Evaluate(0f), Is.Zero);
+        Assert.That(settings.Evaluate(1f), Is.EqualTo(1f));
     }
 
     [Test]
-    public void HandoffRejectsLoopProgressClock()
+    public void LoopHasNoNaturalProgressTrigger()
     {
-        PlayerHandoffSuccessorSettings successor = new PlayerHandoffSuccessorSettings();
-        successor.Configure(true, PlayerMotionNodeKey.ForMotion(PlayerMotionId.RunToIdle), 0.7f, new PlayerHandoffBlendSettings(PlayerHandoffDurationMode.SourceMotionRatio, 0.2f, AnimationCurve.Linear(0f, 0f, 1f, 1f), AnimationCurve.Linear(0f, 0f, 1f, 1f)));
-        List<string> errors = new List<string>();
-        Assert.That(successor.Validate(PlayerMotionNodeKey.ForLoop(PlayerLocomotionMode.Run), errors, "Successor"), Is.False);
+        Assert.That(PlayerMotionHandoffResolver.TryGetSuccessor(PlayerMotionNodeKey.ForLoop(PlayerLocomotionMode.Run), out _), Is.False);
     }
 
     [Test]
@@ -172,9 +169,9 @@ public class PlayerMotionContractTests
     {
         PlayerMotionCatalog catalog = AssetDatabase.LoadAssetAtPath<PlayerMotionCatalog>("Assets/Settings/Player/Motion/DefaultPlayerMotionCatalog.asset");
         Assert.That(catalog, Is.Not.Null);
-        Assert.That(catalog.TryGetCycle(PlayerLocomotionMode.Walk, out _), Is.True);
-        Assert.That(catalog.TryGetCycle(PlayerLocomotionMode.Run, out _), Is.True);
-        Assert.That(catalog.TryGetCycle(PlayerLocomotionMode.FastRun, out _), Is.True);
+        Assert.That(catalog.TryGetLocomotion(PlayerLocomotionMode.Walk, out _), Is.True);
+        Assert.That(catalog.TryGetLocomotion(PlayerLocomotionMode.Run, out _), Is.True);
+        Assert.That(catalog.TryGetLocomotion(PlayerLocomotionMode.FastRun, out _), Is.True);
         List<string> errors = new List<string>();
         Assert.That(catalog.Validate(errors), Is.True, string.Join("\n", errors));
     }

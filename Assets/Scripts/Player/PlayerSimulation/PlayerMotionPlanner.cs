@@ -115,7 +115,7 @@ public class PlayerMotionPlanner : MonoBehaviour
 
     public System.Collections.Generic.IReadOnlyList<PlayerHandoffStep> Advance(float deltaTime, PlayerGameplayIntent intent)
     {
-        return runtime.Advance(deltaTime, intent, transform.forward, PhaseSnapshot.LastPlantFoot);
+        return runtime.Advance(deltaTime, intent, transform.forward);
     }
     /// <summary>
     /// 这里planner通过移动数据驱动phaseRuntime
@@ -148,12 +148,8 @@ public class PlayerMotionPlanner : MonoBehaviour
     {
         Type previous = transition.PreviousStateType;
         Type current = transition.CurrentStateType;
-        PlayerMotionId id;
-        if (previous == typeof(PlayerWalkState) && current == typeof(PlayerIdleState)) id = PlayerMotionId.WalkToIdle;
-        else if (previous == typeof(PlayerRunState) && current == typeof(PlayerIdleState)) id = PlayerMotionId.RunToIdle;
-        else if (previous == typeof(PlayerFastRunState) && current == typeof(PlayerIdleState)) id = PlayerMotionId.FastRunToIdle;
-        else if (previous == typeof(PlayerDodgeState) && current == typeof(PlayerIdleState) && transition.Reason == PlayerStateTransitionReason.DodgeCompleted) id = PlayerMotionId.DodgeToIdle;
-        else { definition = null; return false; }
+        PlayerLocomotionMode sourceMode = previous == typeof(PlayerWalkState) ? PlayerLocomotionMode.Walk : previous == typeof(PlayerRunState) ? PlayerLocomotionMode.Run : previous == typeof(PlayerFastRunState) ? PlayerLocomotionMode.FastRun : previous == typeof(PlayerDodgeState) && transition.Reason == PlayerStateTransitionReason.DodgeCompleted ? PlayerLocomotionMode.Dodge : PlayerLocomotionMode.Idle;
+        if (current != typeof(PlayerIdleState) || !PlayerMotionHandoffResolver.TryGetStop(sourceMode, out PlayerMotionId id)) { definition = null; return false; }
         return catalog.TryGet(id, out definition);
     }
     /// <summary>
@@ -196,6 +192,6 @@ public class PlayerMotionPlanner : MonoBehaviour
 
     private static bool IsGroundState(PlayerLocomotionMode mode)
     {
-        return mode == PlayerLocomotionMode.Idle || PlayerLocomotionCycleDefinition.IsGroundLoopMode(mode);
+        return mode == PlayerLocomotionMode.Idle || PlayerLocomotionDefinition.IsGroundLoopMode(mode);
     }
 }

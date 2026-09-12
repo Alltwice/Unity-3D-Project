@@ -215,7 +215,7 @@ public sealed class PlayerAnimationController : MonoBehaviour
     {
         PlayerLocomotionMode stateMode = ResolveLocomotionMode(stateType);
         //是否是受Simulation控制的Loop
-        manualSampling = locomotionPhase.HasLoop && PlayerLocomotionCycleDefinition.IsGroundLoopMode(stateMode) && locomotionPhase.Mode == stateMode;
+        manualSampling = locomotionPhase.HasLoop && PlayerLocomotionDefinition.IsGroundLoopMode(stateMode) && locomotionPhase.Mode == stateMode;
         //决定使用哪个mode查询动画
         PlayerLocomotionMode resolveMode = manualSampling ? locomotionPhase.Mode : stateMode;
         //决定使用哪个脚步动画

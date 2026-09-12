@@ -486,7 +486,7 @@ public class PlayerAnimationSet : ScriptableObject
 
     private bool ValidateCycleBindings(PlayerLocomotionMode locomotionMode, PlayerLoopAnimationPair loop, string label, ICollection<string> errors)
     {
-        if (motionCatalog == null || loop == null || !motionCatalog.TryGetCycle(locomotionMode, out PlayerLocomotionCycleDefinition cycle))
+        if (motionCatalog == null || loop == null || !motionCatalog.TryGetLocomotion(locomotionMode, out PlayerLocomotionDefinition cycle))
         {
             errors?.Add(name + ": " + label + " 缺少对应的 Catalog Cycle。");
             return false;

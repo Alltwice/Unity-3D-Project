@@ -48,7 +48,7 @@ public class PlayerAnimationSetEditor : Editor
 
     private static bool ValidateCycle(PlayerAnimationSet animationSet, PlayerLocomotionMode mode, string label, ICollection<string> errors, ISet<PlayerMotionProfile> validatedProfiles)
     {
-        if (!animationSet.MotionCatalog.TryGetCycle(mode, out PlayerLocomotionCycleDefinition cycle))
+        if (!animationSet.MotionCatalog.TryGetLocomotion(mode, out PlayerLocomotionDefinition cycle))
         {
             errors.Add(label + ": Catalog Cycle 查询失败。");
             return false;

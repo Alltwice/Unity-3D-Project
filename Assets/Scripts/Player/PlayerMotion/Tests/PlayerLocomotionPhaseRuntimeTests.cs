@@ -160,7 +160,7 @@ public sealed class PlayerLocomotionPhaseRuntimeTests
         PlayerLocomotionMode[] modes = { PlayerLocomotionMode.Walk, PlayerLocomotionMode.Run, PlayerLocomotionMode.FastRun };
         for (int modeIndex = 0; modeIndex < modes.Length; modeIndex++)
         {
-            Assert.That(catalog.TryGetCycle(modes[modeIndex], out PlayerLocomotionCycleDefinition cycle), Is.True);
+            Assert.That(catalog.TryGetLocomotion(modes[modeIndex], out PlayerLocomotionDefinition cycle), Is.True);
             PlayerFoot[] feet = { PlayerFoot.Unknown, PlayerFoot.Left, PlayerFoot.Right };
             for (int footIndex = 0; footIndex < feet.Length; footIndex++)
             {
@@ -207,9 +207,9 @@ public sealed class PlayerLocomotionPhaseRuntimeTests
             PlayerMotionProfile runLeft = CreateLoopProfile("RunLeft", 5f, PlayerFoot.Right, PlayerFoot.Left);
             PlayerMotionProfile fastRunRight = CreateLoopProfile("FastRunRight", 6f, PlayerFoot.Left, PlayerFoot.Right);
             PlayerMotionProfile fastRunLeft = CreateLoopProfile("FastRunLeft", 8f, PlayerFoot.Right, PlayerFoot.Left);
-            PlayerLocomotionCycleDefinition walk = new PlayerLocomotionCycleDefinition();
-            PlayerLocomotionCycleDefinition run = new PlayerLocomotionCycleDefinition();
-            PlayerLocomotionCycleDefinition fastRun = new PlayerLocomotionCycleDefinition();
+            PlayerLocomotionDefinition walk = Create<PlayerLocomotionDefinition>();
+            PlayerLocomotionDefinition run = Create<PlayerLocomotionDefinition>();
+            PlayerLocomotionDefinition fastRun = Create<PlayerLocomotionDefinition>();
             walk.Configure(PlayerLocomotionMode.Walk, walkRight, walkLeft, walkRight);
             run.Configure(PlayerLocomotionMode.Run, runRight, runLeft, runRight);
             fastRun.Configure(PlayerLocomotionMode.FastRun, fastRunRight, fastRunLeft, fastRunRight);

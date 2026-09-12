@@ -1,17 +1,19 @@
-using System;
 using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// 定义一个地面循环模式的三种起步脚变体；Unknown 始终使用 Default
+/// 地面循环的 Profile、起步脚变体与退出混合参数；Idle 不采样移动周期
 /// </summary>
-[Serializable]
-public class PlayerLocomotionCycleDefinition
+[CreateAssetMenu(fileName = "PlayerLocomotionDefinition", menuName = "Player/Motion/Locomotion Definition")]
+public class PlayerLocomotionDefinition : ScriptableObject
 {
     [SerializeField] private PlayerLocomotionMode mode;
     [SerializeField] private PlayerMotionProfile defaultProfile;
     [SerializeField] private PlayerMotionProfile leftProfile;
     [SerializeField] private PlayerMotionProfile rightProfile;
+
+    [SerializeField] private PlayerHandoffSettings exitHandoff = PlayerHandoffSettings.Default();
+    public PlayerHandoffSettings ExitHandoff => exitHandoff;
 
     public PlayerLocomotionMode Mode => mode;
     public PlayerMotionProfile DefaultProfile => defaultProfile;
@@ -27,7 +29,8 @@ public class PlayerLocomotionCycleDefinition
 
     public bool Validate(ICollection<string> errors)
     {
-        bool valid = true;
+        bool valid = exitHandoff.Validate(errors, name + ".ExitHandoff");
+        if (mode == PlayerLocomotionMode.Idle) return valid;
         if (!IsGroundLoopMode(mode)) { errors?.Add("Locomotion Cycle: Mode 必须是 Walk、Run 或 FastRun。"); valid = false; }
         valid &= ValidateProfile(defaultProfile, "Default", errors);
         valid &= ValidateProfile(leftProfile, "Left", errors);
@@ -36,6 +39,8 @@ public class PlayerLocomotionCycleDefinition
     }
 
 #if UNITY_EDITOR
+    public void ConfigureExitHandoff(PlayerHandoffSettings settings) => exitHandoff = settings;
+
     public void Configure(PlayerLocomotionMode locomotionMode, PlayerMotionProfile defaultLoopProfile, PlayerMotionProfile leftLoopProfile, PlayerMotionProfile rightLoopProfile)
     {
         mode = locomotionMode;

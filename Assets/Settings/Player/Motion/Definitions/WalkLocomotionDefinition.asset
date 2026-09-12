@@ -9,32 +9,22 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 8c27a41366a55064e865923a5a0217ab, type: 3}
-  m_Name: RunStart180RightDefinition
-  m_EditorClassIdentifier: Project.PlayerMotion.Runtime::PlayerMotionDefinition
-  profile: {fileID: 11400000, guid: 46b5eb3264c15dc4699bc00048de3413, type: 2}
-  leftFootProfile: {fileID: 0}
-  rightFootProfile: {fileID: 0}
-  requiresFootProfiles: 0
-  usePhaseFootSelection: 0
-  nextPlantFootThreshold: 0.5
-  translationPolicy: 5
-  rotationPolicy: 2
-  basisPolicy: 2
-  durationOverride: 0
-  translationScale: 1
-  transitionLockEndProgress: 0
-  interruptedExitPolicy: 0
-  requiresPresentation: 1
+  m_Script: {fileID: 11500000, guid: 6f40f465f44b4754b1fae2e46a773f16, type: 3}
+  m_Name: WalkLocomotionDefinition
+  m_EditorClassIdentifier: Project.PlayerMotion.Runtime::PlayerLocomotionDefinition
+  mode: 1
+  defaultProfile: {fileID: 11400000, guid: 4fc4d00ff7bdfd4459abe29460a7d4cb, type: 2}
+  leftProfile: {fileID: 11400000, guid: 0813702f0159bb34d827669cd07fa131, type: 2}
+  rightProfile: {fileID: 11400000, guid: 4fc4d00ff7bdfd4459abe29460a7d4cb, type: 2}
   exitHandoff:
-    duration: 0.34000002
+    duration: 0.24
     curve:
       serializedVersion: 2
       m_Curve:
       - serializedVersion: 3
         time: 0
         value: 0
-        inSlope: -0
+        inSlope: 0
         outSlope: 1
         tangentMode: 0
         weightedMode: 0
@@ -44,7 +34,7 @@ MonoBehaviour:
         time: 1
         value: 1
         inSlope: 1
-        outSlope: -0
+        outSlope: 0
         tangentMode: 0
         weightedMode: 0
         inWeight: 0

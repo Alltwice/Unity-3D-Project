@@ -86,23 +86,21 @@ public class PlayerMotionRuntimeTests
         PlayerMotionDefinition definition = CreateDefinition(out PlayerMotionProfile profile);
         PlayerMotionCatalog catalog = ScriptableObject.CreateInstance<PlayerMotionCatalog>();
         PlayerMotionProfile loopProfile = CreateProfile(1f);
-        PlayerLocomotionCycleDefinition cycle = new PlayerLocomotionCycleDefinition();
+        PlayerLocomotionDefinition cycle = ScriptableObject.CreateInstance<PlayerLocomotionDefinition>();
         var loop = PlayerMotionNodeKey.ForLoop(PlayerLocomotionMode.Run);
         var edge = PlayerMotionNodeKey.ForMotion(PlayerMotionId.RunToIdle);
         cycle.Configure(PlayerLocomotionMode.Run, loopProfile, loopProfile, loopProfile);
-        PlayerHandoffEntrySettings entry = new PlayerHandoffEntrySettings();
-        entry.Configure(true, new PlayerHandoffBlendSettings(PlayerHandoffDurationMode.Seconds, 0.2f, AnimationCurve.Linear(0f, 0f, 1f, 1f), AnimationCurve.Linear(0f, 0f, 1f, 1f)), new PlayerHandoffSourceOverride[0]);
-        definition.ConfigureHandoffEntry(entry);
+        cycle.ConfigureExitHandoff(new PlayerHandoffSettings(0.2f, AnimationCurve.Linear(0f, 0f, 1f, 1f)));
         catalog.Configure(new[] { new PlayerMotionCatalogEntry(PlayerMotionId.RunToIdle, definition) }, new[] { cycle }, 150f);
         PlayerHandoffRuntime runtime = new PlayerHandoffRuntime(catalog);
         runtime.SetImmediate(loop, PlayerFoot.Unknown, Vector3.forward, Vector3.forward, Vector3.forward * 4f);
         runtime.Request(edge, PlayerFoot.Unknown, Vector3.forward, Vector3.forward, Vector3.forward * 4f);
-        var steps = runtime.Advance(0.1f, default, Vector3.forward, PlayerFoot.Unknown);
+        var steps = runtime.Advance(0.1f, default, Vector3.forward);
         Assert.That(runtime.Snapshot.SourceTranslationWeight, Is.EqualTo(0.5f).Within(0.0001f));
         Assert.That(steps[0].SourceVelocity, Is.EqualTo(Vector3.forward * 4f));
-        runtime.Advance(0.1f, default, Vector3.forward, PlayerFoot.Unknown);
+        runtime.Advance(0.1f, default, Vector3.forward);
         Assert.That(runtime.Snapshot.IsActive, Is.False);
-        Destroy(definition, profile, loopProfile, catalog);
+        Destroy(definition, profile, loopProfile, cycle, catalog);
     }
 
     [Test]
@@ -168,10 +166,10 @@ public class PlayerMotionRuntimeTests
     }
 
     [Test]
-    public void HandoffRetargetKeepsSourceInstanceAndSeparateWeights()
+    public void HandoffRetargetKeepsSourceProgressAndUnifiedWeight()
     {
         using HandoffFixture fixture = new HandoffFixture();
-        fixture.Runtime.Advance(0.8f, default, Vector3.forward, PlayerFoot.Unknown);
+        fixture.Runtime.Advance(0.8f, default, Vector3.forward);
         PlayerHandoffSnapshot before = fixture.Runtime.Snapshot;
         Assert.That(before.IsActive, Is.True);
         fixture.Runtime.Request(fixture.End, PlayerFoot.Unknown, Vector3.forward, Vector3.forward, Vector3.zero);
@@ -179,11 +177,14 @@ public class PlayerMotionRuntimeTests
         Assert.That(after.Source.InstanceId, Is.EqualTo(before.Source.InstanceId));
         Assert.That(after.SourcePoseWeight, Is.EqualTo(before.SourcePoseWeight).Within(0.0001f));
         Assert.That(after.SourceTranslationWeight, Is.EqualTo(before.SourceTranslationWeight).Within(0.0001f));
+        Assert.That(after.Source.Motion.Progress, Is.EqualTo(before.Source.Motion.Progress));
+        Assert.That(after.SourcePoseWeight, Is.EqualTo(after.SourceTranslationWeight));
+        Assert.That(after.Target.Motion.Progress, Is.Zero);
         Assert.That(after.Target.Key, Is.EqualTo(fixture.End));
         Assert.That(after.Target.InstanceId, Is.Not.EqualTo(before.Target.InstanceId));
-        fixture.Runtime.Advance(0.1f, default, Vector3.forward, PlayerFoot.Unknown);
+        fixture.Runtime.Advance(0.1f, default, Vector3.forward);
         Assert.That(fixture.Runtime.Snapshot.Source.Motion.Progress, Is.GreaterThan(after.Source.Motion.Progress));
-        Assert.That(fixture.Runtime.Snapshot.SourcePoseWeight, Is.LessThan(after.SourcePoseWeight));
+        Assert.That(fixture.Runtime.Snapshot.SourcePoseWeight, Is.EqualTo(after.SourcePoseWeight * (1f - 0.1f / 0.3f)).Within(0.0001f));
     }
 
     [TestCase(1f)]
@@ -194,12 +195,12 @@ public class PlayerMotionRuntimeTests
     public void HandoffCrossingConsumesOnlyRemainingFrameTime(float motionDuration)
     {
         using HandoffFixture fixture = new HandoffFixture(motionDuration: motionDuration);
-        var steps = fixture.Runtime.Advance(0.7f * motionDuration + 0.1f, default, Vector3.forward, PlayerFoot.Unknown);
+        var steps = fixture.Runtime.Advance(0.7f * motionDuration + 0.1f, default, Vector3.forward);
         Assert.That(fixture.Runtime.Snapshot.Target.ElapsedTime, Is.EqualTo(0.1f).Within(0.0001f));
         float totalTime = 0f;
         foreach (PlayerHandoffStep step in steps) totalTime += step.DeltaTime;
         Assert.That(totalTime, Is.EqualTo(0.7f * motionDuration + 0.1f).Within(0.0001f));
-        fixture.Runtime.Advance(0.3f, default, Vector3.forward, PlayerFoot.Unknown);
+        fixture.Runtime.Advance(0.3f, default, Vector3.forward);
         Assert.That(fixture.Runtime.Snapshot.IsActive, Is.False);
         Assert.That(fixture.Runtime.Snapshot.Target.ElapsedTime, Is.EqualTo(0.4f).Within(0.0001f));
     }
@@ -208,7 +209,7 @@ public class PlayerMotionRuntimeTests
     public void HandoffExactTriggerStartsTargetWithoutAdvancingIt()
     {
         using HandoffFixture fixture = new HandoffFixture();
-        fixture.Runtime.Advance(0.7f, default, Vector3.forward, PlayerFoot.Unknown);
+        fixture.Runtime.Advance(0.7f, default, Vector3.forward);
         Assert.That(fixture.Runtime.Snapshot.IsActive, Is.True);
         Assert.That(fixture.Runtime.Snapshot.Target.ElapsedTime, Is.Zero);
     }
@@ -217,7 +218,7 @@ public class PlayerMotionRuntimeTests
     public void HandoffRepeatedTargetDoesNotRestartAndReturnReusesSource()
     {
         using HandoffFixture fixture = new HandoffFixture();
-        fixture.Runtime.Advance(0.8f, default, Vector3.forward, PlayerFoot.Unknown);
+        fixture.Runtime.Advance(0.8f, default, Vector3.forward);
         var before = fixture.Runtime.Snapshot;
         fixture.Runtime.Request(before.Target.Key, PlayerFoot.Unknown, Vector3.forward, Vector3.forward, Vector3.zero);
         Assert.That(fixture.Runtime.Snapshot.Target.InstanceId, Is.EqualTo(before.Target.InstanceId));
@@ -230,7 +231,7 @@ public class PlayerMotionRuntimeTests
     public void ZeroDurationHandoffImmediatelyReleasesSource()
     {
         using HandoffFixture fixture = new HandoffFixture(0f);
-        fixture.Runtime.Advance(0.7f, default, Vector3.forward, PlayerFoot.Unknown);
+        fixture.Runtime.Advance(0.7f, default, Vector3.forward);
         Assert.That(fixture.Runtime.Snapshot.IsActive, Is.False);
         Assert.That(fixture.Runtime.Snapshot.Target.Key.IsMotion, Is.False);
     }
@@ -248,27 +249,17 @@ public class PlayerMotionRuntimeTests
             var endDefinition = CreateDefinition(out var endProfile);
             startDefinition.Configure(startProfile, PlayerMotionTranslationPolicy.TravelAlongCapturedDirection, PlayerMotionRotationPolicy.FaceDirection, PlayerMotionBasisPolicy.DesiredDirection, motionDuration, 1f);
             PlayerMotionProfile loopProfile = CreateProfile(1f);
-            PlayerLocomotionCycleDefinition cycle = new PlayerLocomotionCycleDefinition();
+            PlayerLocomotionDefinition cycle = ScriptableObject.CreateInstance<PlayerLocomotionDefinition>();
             cycle.Configure(PlayerLocomotionMode.Run, loopProfile, loopProfile, loopProfile);
             var catalog = ScriptableObject.CreateInstance<PlayerMotionCatalog>();
             catalog.Configure(new[] { new PlayerMotionCatalogEntry(PlayerMotionId.IdleToRun, startDefinition), new PlayerMotionCatalogEntry(PlayerMotionId.RunToIdle, endDefinition) }, new[] { cycle }, 150f);
             var linear = AnimationCurve.Linear(0f, 0f, 1f, 1f);
-            PlayerHandoffBlendSettings progressBlend = new PlayerHandoffBlendSettings(PlayerHandoffDurationMode.Seconds, duration, AnimationCurve.EaseInOut(0f, 0f, 1f, 1f), linear);
-            PlayerHandoffSuccessorSettings successor = new PlayerHandoffSuccessorSettings();
-            successor.Configure(true, loop, 0.7f, progressBlend);
-            startDefinition.ConfigureDefaultSuccessor(successor);
-            PlayerHandoffEntrySettings endEntry = new PlayerHandoffEntrySettings();
-            endEntry.Configure(true, new PlayerHandoffBlendSettings(PlayerHandoffDurationMode.Seconds, 0.4f, linear, linear), new PlayerHandoffSourceOverride[0]);
-            endDefinition.ConfigureHandoffEntry(endEntry);
-            PlayerHandoffEntrySettings startEntry = new PlayerHandoffEntrySettings();
-            startEntry.Configure(true, new PlayerHandoffBlendSettings(PlayerHandoffDurationMode.Seconds, 0.2f, linear, linear), new PlayerHandoffSourceOverride[0]);
-            startDefinition.ConfigureHandoffEntry(startEntry);
-            PlayerHandoffEntrySettings loopEntry = new PlayerHandoffEntrySettings();
-            loopEntry.Configure(false, PlayerHandoffBlendSettings.Default(), new PlayerHandoffSourceOverride[0]);
-            catalog.ConfigureLoopHandoffEntries(new[] { new PlayerLocomotionHandoffEntry(PlayerLocomotionMode.Run, loopEntry) });
+            startDefinition.ConfigureExitHandoff(new PlayerHandoffSettings(duration, linear));
+            endDefinition.ConfigureExitHandoff(new PlayerHandoffSettings(0.4f, linear));
+            cycle.ConfigureExitHandoff(new PlayerHandoffSettings(0.2f, linear));
             Runtime = new PlayerHandoffRuntime(catalog);
             Runtime.SetImmediate(start, PlayerFoot.Unknown, Vector3.forward, Vector3.forward, Vector3.zero);
-            owned = new Object[] { startDefinition, startProfile, endDefinition, endProfile, loopProfile, catalog };
+            owned = new Object[] { startDefinition, startProfile, endDefinition, endProfile, loopProfile, cycle, catalog };
         }
         public void Dispose() => Destroy(owned);
     }

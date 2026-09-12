@@ -33,13 +33,13 @@ public class PlayerLocomotionPhaseRuntime
         if (handoff.HasTarget)
         {
             PlayerHandoffNodeSnapshot loop = !handoff.Target.Key.IsMotion ? handoff.Target : handoff.IsActive && !handoff.Source.Key.IsMotion ? handoff.Source : default;
-            if (loop.InstanceId == 0 || !motorResult.IsGrounded || !PlayerLocomotionCycleDefinition.IsGroundLoopMode(loop.Key.Locomotion)) { PauseForBoundary(locomotionMode); return; }
+            if (loop.InstanceId == 0 || !motorResult.IsGrounded || !PlayerLocomotionDefinition.IsGroundLoopMode(loop.Key.Locomotion)) { PauseForBoundary(locomotionMode); return; }
             if (!hasLoop || mode != loop.Key.Locomotion) ActivateCycle(loop.Key.Locomotion);
             else AdvanceLoop(motorResult);
             return;
         }
         //是不是loop动画
-        if (!PlayerLocomotionCycleDefinition.IsGroundLoopMode(locomotionMode) || !motorResult.IsGrounded)
+        if (!PlayerLocomotionDefinition.IsGroundLoopMode(locomotionMode) || !motorResult.IsGrounded)
         {
             CloseCycle(locomotionMode);
             return;
@@ -61,7 +61,7 @@ public class PlayerLocomotionPhaseRuntime
 
     private void ActivateCycle(PlayerLocomotionMode locomotionMode)
     {
-        if (catalog == null || !catalog.TryGetCycle(locomotionMode, out PlayerLocomotionCycleDefinition definition)) throw new InvalidOperationException("PlayerMotionCatalog 缺少 " + locomotionMode + " 的 Locomotion Cycle。");
+        if (catalog == null || !catalog.TryGetLocomotion(locomotionMode, out PlayerLocomotionDefinition definition)) throw new InvalidOperationException("PlayerMotionCatalog 缺少 " + locomotionMode + " 的 Locomotion Cycle。");
         if (!definition.TryResolveProfile(lastPlantFoot, out PlayerMotionProfile selectedProfile, out PlayerFoot selectedVariantFoot)) throw new InvalidOperationException(locomotionMode + " Locomotion Cycle 缺少 " + selectedVariantFoot + " Loop Profile。");
         profile = selectedProfile;
         variantFoot = selectedVariantFoot;
