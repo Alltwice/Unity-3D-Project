@@ -5,7 +5,6 @@
   <xs:import schemaLocation="UnityEditor.Rendering.xsd" namespace="UnityEditor.Rendering" />
   <xs:import schemaLocation="UnityEditor.Tilemaps.xsd" namespace="UnityEditor.Tilemaps" />
   <xs:import schemaLocation="UnityEditor.Tilemaps.External.xsd" namespace="UnityEditor.Tilemaps.External" />
-  <xs:import schemaLocation="com.IvanMurzak.Unity.MCP.Editor.UI.Controls.xsd" namespace="com.IvanMurzak.Unity.MCP.Editor.UI.Controls" />
   <xs:import schemaLocation="Unity.UIToolkit.Editor.xsd" namespace="Unity.UIToolkit.Editor" />
   <xs:import schemaLocation="UnityEditor.UIElements.Debugger.xsd" namespace="UnityEditor.UIElements.Debugger" />
   <xs:import schemaLocation="Unity.UI.Builder.xsd" namespace="Unity.UI.Builder" />

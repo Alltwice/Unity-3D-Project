@@ -1,6 +1,0 @@
-﻿<Solution>
-  <Project Path="Kybernetik.Animancer.csproj" />
-  <Project Path="Kybernetik.Animancer.Editor.csproj" />
-  <Project Path="Kybernetik.Animancer.FSM.csproj" />
-  <Project Path="Assembly-CSharp.csproj" />
-</Solution>
