@@ -1,7 +1,7 @@
 # Architecture
 
 > 本文记录项目当前较稳定的职责边界、依赖方向和核心运行流  
-> 最后核对的运行时代码基线：当前工作树（2026-09-12，包含 Source Exit Handoff 与 Loop Definition 资产化）
+> 最后核对的运行时代码基线：当前工作树（2026-09-28，包含 Source Exit Handoff、Loop Definition 资产化与独立朝向八方向 Mixer 槽位）
 
 ## 1. 当前架构概览
 
@@ -108,6 +108,8 @@ PlayerMotor 执行 CharacterController 移动
     ↓
 提交 Locomotion Phase
     ↓
+Planner 根据最终 Intent 生成独立朝向方向快照
+    ↓
 AnimationController 消费最终事实并手动评估 Animancer
 ```
 
@@ -115,7 +117,7 @@ AnimationController 消费最终事实并手动评估 Animancer
 
 `PlayerMotorResult` 在 Motor 执行后产生，再反馈给状态、落地检测、Foot Phase 和后续决策。
 
-`PlayerAnimationController` 位于模拟之后，接收最终的 Gameplay State、Transition、Motion Snapshot、Phase Snapshot 和 Landing Presentation，当前不参与本帧移动裁决。
+`PlayerAnimationController` 位于模拟之后，接收最终的 Gameplay State、Transition、Motion Snapshot、Phase Snapshot、独立朝向方向快照和 Landing Presentation，当前不参与本帧移动裁决。
 
 ## 3. 输入与依赖注入
 
@@ -273,6 +275,8 @@ Catalog 通过 `TryGet` / `TryGetLocomotion` 查找两类 Definition，并校验
 ### PlayerMotionPlanner
 
 `PlayerMotionPlanner` 位于 Simulation 层，把 **Gameplay Transition / Intent 转换为 Motion 选择**。
+
+在最终状态转换和脚步相位提交后，Planner 用有效 `DesiredMoveDirection` 与同帧 `DesiredFacingDirection` 生成 `PlayerDirectionalMovementSnapshot`：保存步态、角色朝向局部的单位二维方向、有效输入幅值及活动标记。该快照仅在 Independent 的 Walk / Run / FastRun 且存在有效地面移动时成立；松键宽限期沿用 Driver 保留的有效方向，离开这些条件即清空。
 
 它负责：
 
@@ -446,12 +450,13 @@ PlayerLocomotionPhaseSnapshot
 
 ### PlayerAnimationSet
 
-`PlayerAnimationSet` 是运行语义与具体 Animancer `ClipTransition` 的资源映射边界。
+`PlayerAnimationSet` 是运行语义与具体 Animancer `ClipTransition`、`MixerTransition2D` 的资源映射边界。
 
 它负责：
 
 - `PlayerMotionDefinition + selected PlayerMotionProfile → Motion ClipTransition`
 - `PlayerLocomotionMode + PlayerFoot → Loop ClipTransition`
+- Independent Walk / Run / FastRun 的八方向 → Directional `MixerTransition2D`；三个步态各有八个 Clip 空槽，只有该步态八个有效 Clip 与方向阈值齐备时才启用，否则使用原脚步 Loop
 - Jump / Dodge Presentation Cue 与 Landing Key → ClipTransition
 - 校验 Catalog、Definition、Profile 与 Animation Binding 的一致性
 
@@ -468,11 +473,11 @@ PlayerLocomotionPhaseSnapshot
 - **Dodge / HardLanding**：按对应 Gameplay State 的 PresentationProgress 手动采样
 - **Jump / 普通 Landing Edge**：由 Animancer 推进，结束事件切回目标 Loop
 
-Controller 按 Handoff 节点实例创建独立 Animancer State，即使 Clip 相同也不共用采样时间。每帧从快照读取两端姿态权重；旧目标被替换或源淡出完成后销毁对应 State。Controller 不推进地面混合时钟。
+Controller 按 Handoff 节点实例创建独立顶层 Clip State 或 Directional Mixer State，即使资源相同也不共用采样时间。Mixer 参数来自方向快照，子动画沿用节点脚步相位的手动采样；零方向不送入 Mixer。每帧从快照读取两端姿态权重并施加于顶层 State；同一 Loop 的方向变化仅更新 Mixer 参数，不请求 Handoff。切换朝向模式导致节点内 Clip / Mixer 变化时，动画层以当前相位做短时姿态淡入。旧目标被替换或源淡出完成后销毁对应 State。Controller 不推进地面混合时钟。
 
 A→B 混合中请求 C 时，Runtime 保留 A 的采样进度及当前姿态/平移权重，立即释放 B，按来源 A 的退出配置重新计时。源权重为捕获权重乘 `1-Curve(u)`，目标补足到 1；旧目标的姿态与速度贡献被立即替换。请求回到来源时交换两端，复用来源实例恢复权重。
 
-Dodge 完成进入地面时，`PlayerAnimationController` 对 `DodgeToIdle` Motion 和 `FastRunLoop` 共用独立 FixedDuration 姿态 Fade：完成转换时补齐 Dodge 最后姿态，按目标节点实际解析出的 `ClipTransition` 将目标从零权重淡入；目标节点实例未改变时继续当前 Fade，目标被替换或统一 Handoff 开始时先结束专用 Fade，再应用地面两节点快照。再次 Dodge 或进入空中会取消并清理专用 Fade，零时长直接完成。该 Fade 只控制姿态权重，FastRun 的移动与相位仍由 Simulation 立即交给目标；Jump、Landing 和 Dodge 本体仍走独立表现路径。
+Dodge 完成进入地面时，`PlayerAnimationController` 对 `DodgeToIdle` Motion 和 `FastRunLoop` 共用独立 FixedDuration 姿态 Fade：完成转换时补齐 Dodge 最后姿态，按目标节点实际解析出的顶层 Transition 将目标从零权重淡入；目标节点实例未改变时继续当前 Fade，目标被替换或统一 Handoff 开始时先结束专用 Fade，再应用地面两节点快照。再次 Dodge 或进入空中会取消并清理专用 Fade，零时长直接完成。该 Fade 只控制姿态权重，FastRun 的移动与相位仍由 Simulation 立即交给目标；Jump、Landing 和 Dodge 本体仍走独立表现路径。
 
 ## 10. Editor 烘焙与预览工具链
 

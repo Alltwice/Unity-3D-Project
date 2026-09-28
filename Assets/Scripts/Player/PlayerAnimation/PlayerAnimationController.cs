@@ -35,16 +35,25 @@ public sealed class PlayerAnimationController : MonoBehaviour
         animancer.Graph.UpdateMode = DirectorUpdateMode.Manual;
     }
 
-    private readonly System.Collections.Generic.Dictionary<ulong, AnimancerState> groundStates = new System.Collections.Generic.Dictionary<ulong, AnimancerState>();
+    private const float GroundStateSwitchDuration = 0.12f;
+    private class GroundPresentation
+    {
+        public AnimancerState Current;
+        public AnimancerState Previous;
+        public bool IsDirectional;
+        public float SwitchElapsed = GroundStateSwitchDuration;
+    }
+
+    private readonly System.Collections.Generic.Dictionary<ulong, GroundPresentation> groundStates = new System.Collections.Generic.Dictionary<ulong, GroundPresentation>();
     private readonly System.Collections.Generic.List<ulong> releasedStates = new System.Collections.Generic.List<ulong>();
 
-    public void Present(Type currentGameplayStateType, PlayerStateTransition? transition, PlayerMotionSnapshot motion, PlayerLocomotionPhaseSnapshot locomotionPhase, float stateProgress, PlayerLandingPresentationKey? landingPresentation, PlayerHandoffSnapshot handoff)
+    public void Present(Type currentGameplayStateType, PlayerStateTransition? transition, PlayerMotionSnapshot motion, PlayerLocomotionPhaseSnapshot locomotionPhase, float stateProgress, PlayerLandingPresentationKey? landingPresentation, PlayerHandoffSnapshot handoff, PlayerDirectionalMovementSnapshot directionalMovement, float deltaTime)
     {
         gameplayStateType = currentGameplayStateType;
         if (handoff.HasTarget)
         {
             landingState = null;
-            PresentGround(handoff, locomotionPhase, transition);
+            PresentGround(handoff, locomotionPhase, transition, directionalMovement, deltaTime);
             return;
         }
         ClearGroundStates();
@@ -61,20 +70,20 @@ public sealed class PlayerAnimationController : MonoBehaviour
 
     public void EvaluateGraph(float deltaTime) => animancer.Evaluate(Mathf.Max(0f, deltaTime));
 
-    private void PresentGround(PlayerHandoffSnapshot handoff, PlayerLocomotionPhaseSnapshot phase, PlayerStateTransition? transition)
+    private void PresentGround(PlayerHandoffSnapshot handoff, PlayerLocomotionPhaseSnapshot phase, PlayerStateTransition? transition, PlayerDirectionalMovementSnapshot direction, float deltaTime)
     {
         if (dodgeExitFadeTargetState != null && (handoff.IsActive || dodgeExitFadeTargetInstanceId != handoff.Target.InstanceId)) CompleteDodgeExitFade();
         releasedStates.Clear();
         foreach (var pair in groundStates)
             if (pair.Key != handoff.Target.InstanceId && (!handoff.IsActive || pair.Key != handoff.Source.InstanceId)) releasedStates.Add(pair.Key);
-        foreach (ulong id in releasedStates) { groundStates[id].Destroy(); groundStates.Remove(id); }
-        AnimancerState target = ResolveGroundState(handoff.Target, phase, out ClipTransition targetTransition);
-        AnimancerState source = handoff.IsActive ? ResolveGroundState(handoff.Source, phase, out _) : null;
-        boundaryState = handoff.Target.Key.IsMotion ? target : null;
+        foreach (ulong id in releasedStates) { DestroyGroundPresentation(groundStates[id]); groundStates.Remove(id); }
+        GroundPresentation target = ResolveGroundState(handoff.Target, phase, direction, deltaTime, out ITransition targetTransition);
+        GroundPresentation source = handoff.IsActive ? ResolveGroundState(handoff.Source, phase, direction, deltaTime, out _) : null;
+        boundaryState = handoff.Target.Key.IsMotion ? target.Current : null;
         DebugBoundaryPhase = handoff.Target.Motion.Progress;
         if (transition.HasValue && IsDodgeExitEntry(transition.Value, handoff.Target) && dodgeState != null && dodgeExitFadeTargetState == null)
         {
-            BeginDodgeExitFade(target, handoff.Target.InstanceId, targetTransition);
+            BeginDodgeExitFade(target.Current, handoff.Target.InstanceId, targetTransition.FadeDuration);
         }
         if (dodgeExitFadeTargetState != null)
         {
@@ -87,35 +96,98 @@ public sealed class PlayerAnimationController : MonoBehaviour
         {
             AnimancerState state = layer.ActiveStates[i];
             state.CancelFade();
-            if (state != source && state != target) state.Stop();
+            if (!ContainsGroundState(source, state) && !ContainsGroundState(target, state)) state.Stop();
         }
-        if (source != null) source.Weight = handoff.SourcePoseWeight;
-        target.Weight = 1f - handoff.SourcePoseWeight;
+        if (source != null) ApplyGroundWeight(source, handoff.SourcePoseWeight);
+        ApplyGroundWeight(target, 1f - handoff.SourcePoseWeight);
     }
 
-    private AnimancerState ResolveGroundState(PlayerHandoffNodeSnapshot node, PlayerLocomotionPhaseSnapshot phase, out ClipTransition transition)
+    private GroundPresentation ResolveGroundState(PlayerHandoffNodeSnapshot node, PlayerLocomotionPhaseSnapshot phase, PlayerDirectionalMovementSnapshot direction, float deltaTime, out ITransition transition)
     {
         if (node.Phase.HasLoop) phase = node.Phase;
-        if (!TryResolveGroundTransition(node, phase, out transition)) throw new InvalidOperationException("Missing ground animation: " + node.Key);
-        if (!groundStates.TryGetValue(node.InstanceId, out AnimancerState state))
+        if (!TryResolveGroundTransition(node, phase, direction, out transition, out bool directional)) throw new InvalidOperationException("Missing ground animation: " + node.Key);
+        if (!groundStates.TryGetValue(node.InstanceId, out GroundPresentation presentation))
         {
-            state = animancer.Layers[0].CreateState(new object(), transition.Clip);
-            transition.Apply(state);
-            state.Play();
-            groundStates.Add(node.InstanceId, state);
+            presentation = new GroundPresentation { Current = CreateGroundState(transition), IsDirectional = directional };
+            groundStates.Add(node.InstanceId, presentation);
         }
-        state.Speed = 0f;
-        state.IsPlaying = false;
-        if (node.Key.IsMotion) state.NormalizedTime = node.Motion.Progress;
-        else if (phase.HasLoop && phase.Mode == node.Key.Locomotion) state.NormalizedTime = phase.NormalizedTime;
-        else state.Time = node.ElapsedTime;
+        else if (presentation.IsDirectional != directional)
+        {
+            if (dodgeExitFadeTargetState == presentation.Current) CompleteDodgeExitFade();
+            presentation.Previous?.Destroy();
+            presentation.Previous = presentation.Current;
+            presentation.Current = CreateGroundState(transition);
+            presentation.IsDirectional = directional;
+            presentation.SwitchElapsed = 0f;
+        }
+        if (directional) ((DirectionalMixerState)presentation.Current).Parameter = direction.LocalDirection;
+        float normalizedTime = node.Key.IsMotion ? node.Motion.Progress : phase.HasLoop && phase.Mode == node.Key.Locomotion ? phase.NormalizedTime : 0f;
+        SampleGroundState(presentation.Current, node, phase, normalizedTime);
+        if (presentation.Previous != null)
+        {
+            SampleGroundState(presentation.Previous, node, phase, normalizedTime);
+            presentation.SwitchElapsed += Mathf.Max(0f, deltaTime);
+            if (presentation.SwitchElapsed >= GroundStateSwitchDuration)
+            {
+                presentation.Previous.Destroy();
+                presentation.Previous = null;
+            }
+        }
+        return presentation;
+    }
+
+    private AnimancerState CreateGroundState(ITransition transition)
+    {
+        AnimancerState state = transition.CreateState();
+        state.Key = new object();
+        state.SetParent(animancer.Layers[0]);
+        transition.Apply(state);
+        state.Play();
         return state;
     }
 
-    private bool TryResolveGroundTransition(PlayerHandoffNodeSnapshot node, PlayerLocomotionPhaseSnapshot phase, out ClipTransition transition)
+    private static void SampleGroundState(AnimancerState state, PlayerHandoffNodeSnapshot node, PlayerLocomotionPhaseSnapshot phase, float normalizedTime)
     {
+        state.Speed = 0f;
+        state.IsPlaying = false;
+        if (node.Key.IsMotion || phase.HasLoop && phase.Mode == node.Key.Locomotion) state.NormalizedTime = normalizedTime;
+        else state.Time = node.ElapsedTime;
+    }
+
+    private static bool ContainsGroundState(GroundPresentation presentation, AnimancerState state)
+    {
+        return presentation != null && (presentation.Current == state || presentation.Previous == state);
+    }
+
+    private static void ApplyGroundWeight(GroundPresentation presentation, float weight)
+    {
+        float progress = presentation.Previous == null ? 1f : Mathf.Clamp01(presentation.SwitchElapsed / GroundStateSwitchDuration);
+        presentation.Current.Weight = weight * progress;
+        if (presentation.Previous != null) presentation.Previous.Weight = weight * (1f - progress);
+    }
+
+    private static void DestroyGroundPresentation(GroundPresentation presentation)
+    {
+        presentation.Current.Destroy();
+        presentation.Previous?.Destroy();
+    }   
+    ///<summary>用于处理地面八向移动动画解析</summary>
+    private bool TryResolveGroundTransition(PlayerHandoffNodeSnapshot node, PlayerLocomotionPhaseSnapshot phase, PlayerDirectionalMovementSnapshot direction, out ITransition transition, out bool directional)
+    {
+        directional = false;
         if (node.Phase.HasLoop) phase = node.Phase;
-        if (node.Key.IsMotion) return animationSet.TryGetBinding(node.Motion.ActiveDefinition, node.Motion.ActiveProfile, out _, out transition);
+        if (node.Key.IsMotion)
+        {
+            bool found = animationSet.TryGetBinding(node.Motion.ActiveDefinition, node.Motion.ActiveProfile, out _, out ClipTransition motionTransition);
+            transition = motionTransition;
+            return found;
+        }
+        if (direction.IsActive && direction.Mode == node.Key.Locomotion && animationSet.TryResolveDirectionalLoop(node.Key.Locomotion, out MixerTransition2D mixer))
+        {
+            transition = mixer;
+            directional = true;
+            return true;
+        }
         PlayerFoot foot = phase.HasLoop && phase.Mode == node.Key.Locomotion ? phase.VariantFoot : PlayerFoot.Unknown;
         if (animationSet.TryResolveLoop(node.Key.Locomotion, foot, out PlayerAnimationSelection selection))
         {
@@ -129,7 +201,7 @@ public sealed class PlayerAnimationController : MonoBehaviour
     private void ClearGroundStates()
     {
         ClearDodgeExitFade();
-        foreach (AnimancerState state in groundStates.Values) state.Destroy();
+        foreach (GroundPresentation presentation in groundStates.Values) DestroyGroundPresentation(presentation);
         groundStates.Clear();
     }
 
@@ -273,7 +345,7 @@ public sealed class PlayerAnimationController : MonoBehaviour
         return transition.CurrentStateType == typeof(PlayerFastRunState) && !target.Key.IsMotion && target.Key.Locomotion == PlayerLocomotionMode.FastRun;
     }
 
-    private void BeginDodgeExitFade(AnimancerState target, ulong targetInstanceId, ClipTransition transition)
+    private void BeginDodgeExitFade(AnimancerState target, ulong targetInstanceId, float fadeDuration)
     {
         AnimancerState source = dodgeState;
         dodgeExitFadeSourceState = source;
@@ -285,13 +357,13 @@ public sealed class PlayerAnimationController : MonoBehaviour
         source.NormalizedTime = 1f;
         target.CancelFade();
         target.Weight = 0f;
-        if (transition.FadeDuration <= 0f)
+        if (fadeDuration <= 0f)
         {
             target.Weight = 1f;
             CompleteDodgeExitFade();
             return;
         }
-        animancer.Play(target, transition.FadeDuration, FadeMode.FixedDuration);
+        animancer.Play(target, fadeDuration, FadeMode.FixedDuration);
     }
 
     private void CompleteDodgeExitFade()

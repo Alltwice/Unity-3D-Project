@@ -109,9 +109,11 @@ public class PlayerIdleAnimationGroup
 public class PlayerLocomotionAnimationGroup
 {
     [SerializeField] private PlayerLoopAnimationPair loop = new PlayerLoopAnimationPair();
+    [SerializeField] private MixerTransition2D directionalLoop = new MixerTransition2D();
     [SerializeField] private List<PlayerMotionAnimationBinding> motionBindings = new List<PlayerMotionAnimationBinding>();
 
     public PlayerLoopAnimationPair Loop => loop;
+    public MixerTransition2D DirectionalLoop => directionalLoop;
     public List<PlayerMotionAnimationBinding> MotionBindings => motionBindings;
 }
 
@@ -321,6 +323,49 @@ public class PlayerAnimationSet : ScriptableObject
                 selection = default;
                 return false;
         }
+    }
+
+    /// <summary>八个方向都绑定有效 Clip 后才启用独立朝向 Mixer</summary>
+    public bool TryResolveDirectionalLoop(PlayerLocomotionMode mode, out MixerTransition2D transition)
+    {
+        PlayerLocomotionAnimationGroup group = mode == PlayerLocomotionMode.Walk ? walk : mode == PlayerLocomotionMode.Run ? run : mode == PlayerLocomotionMode.FastRun ? sprint : null;
+        transition = group?.DirectionalLoop;
+        if (transition == null || transition.Type != MixerTransition2D.MixerType.Directional) return false;
+        UnityEngine.Object[] animations = transition.Animations;
+        Vector2[] thresholds = transition.Thresholds;
+        if (animations == null || animations.Length != 8 || thresholds == null || thresholds.Length != 8) return false;
+        for (int i = 0; i < 8; i++)
+        {
+            if (animations[i] is not AnimationClip clip || clip.legacy || Vector2.Distance(thresholds[i], DirectionThreshold(i)) > 0.001f) return false;
+        }
+        return true;
+    }
+    /// <summary>只用来统计槽位数量</summary>
+    public int CountDirectionalClips(PlayerLocomotionMode mode)
+    {
+        PlayerLocomotionAnimationGroup group = mode == PlayerLocomotionMode.Walk ? walk : mode == PlayerLocomotionMode.Run ? run : mode == PlayerLocomotionMode.FastRun ? sprint : null;
+        MixerTransition2D transition = group?.DirectionalLoop;
+        UnityEngine.Object[] animations = transition == null ? null : transition.Animations;
+        if (animations == null) return 0;
+        int count = 0;
+        foreach (UnityEngine.Object animation in animations) if (animation != null) count++;
+        return count;
+    }
+
+    private static Vector2 DirectionThreshold(int index)
+    {
+        const float diagonal = 0.70710678f;
+        return index switch
+        {
+            0 => new Vector2(0f, 1f),
+            1 => new Vector2(diagonal, diagonal),
+            2 => new Vector2(1f, 0f),
+            3 => new Vector2(diagonal, -diagonal),
+            4 => new Vector2(0f, -1f),
+            5 => new Vector2(-diagonal, -diagonal),
+            6 => new Vector2(-1f, 0f),
+            _ => new Vector2(-diagonal, diagonal)
+        };
     }
 
     public bool TryResolveCue(PlayerAnimationCue cue, out ClipTransition transition)

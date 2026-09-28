@@ -83,6 +83,25 @@ public struct PlayerGameplayIntent
         HasVerticalImpulse = true;
     }
 }
+
+/// <summary>
+/// 独立朝向地面移动在当前帧的角色朝向局部方向，幅值来自有效移动意图
+/// </summary>
+public struct PlayerDirectionalMovementSnapshot
+{
+    public PlayerLocomotionMode Mode;
+    public Vector2 LocalDirection;
+    public float InputMagnitude;
+    public bool IsActive;
+
+    public PlayerDirectionalMovementSnapshot(PlayerLocomotionMode mode, Vector2 localDirection, float inputMagnitude)
+    {
+        Mode = mode;
+        LocalDirection = localDirection;
+        InputMagnitude = inputMagnitude;
+        IsActive = true;
+    }
+}
 /// <summary>
 /// 玩家最终执行命令快照
 /// </summary>

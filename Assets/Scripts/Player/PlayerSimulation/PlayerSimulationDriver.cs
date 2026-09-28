@@ -100,8 +100,9 @@ public class PlayerSimulationDriver : MonoBehaviour
         PlayerLandingPresentationKey? landingPresentation = ResolveLandingPresentation(resultTransition, LandingSnapshot);
         pendingTransition = null;
         motionPlanner.CommitLocomotionPhase(stateController.CurrentLocomotionMode, motorResult);
+        motionPlanner.ResolveDirectionalMovement(resultTransition.HasValue ? postTransitionIntent : intent);
         //播放动画表现
-        animationController.Present(stateController.CurrentState.GetType(), presentationTransition, motionPlanner.Snapshot, motionPlanner.PhaseSnapshot, stateController.CurrentPresentationProgress, landingPresentation, motionPlanner.HandoffSnapshot);
+        animationController.Present(stateController.CurrentState.GetType(), presentationTransition, motionPlanner.Snapshot, motionPlanner.PhaseSnapshot, stateController.CurrentPresentationProgress, landingPresentation, motionPlanner.HandoffSnapshot, motionPlanner.DirectionalMovement, deltaTime);
         //animancer设定为手动后需要手动更新
         animationController.EvaluateGraph(deltaTime);
     }

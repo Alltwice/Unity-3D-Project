@@ -42,6 +42,9 @@ public class PlayerAnimationSetEditor : Editor
         WarnIfCueUnbound(animationSet, PlayerAnimationCue.LandingLv2, "Landing.Land2");
         WarnIfCueUnbound(animationSet, PlayerAnimationCue.LandingLv3, "Landing.Land3");
         WarnIfCueUnbound(animationSet, PlayerAnimationCue.HardLanding, "Landing.Land4");
+        WarnIfDirectionalPartiallyBound(animationSet, PlayerLocomotionMode.Walk, "Walk");
+        WarnIfDirectionalPartiallyBound(animationSet, PlayerLocomotionMode.Run, "Run");
+        WarnIfDirectionalPartiallyBound(animationSet, PlayerLocomotionMode.FastRun, "Sprint");
         if (valid) Debug.Log(animationSet.name + ": Motion bindings and baked sources valid.", animationSet);
         else Debug.LogError(string.Join("\n", errors), animationSet);
     }
@@ -86,6 +89,13 @@ public class PlayerAnimationSetEditor : Editor
     {
         if (animationSet.TryResolveCue(cue, out ClipTransition transition) && transition != null && transition.Clip != null) return;
         Debug.LogWarning(animationSet.name + ": " + label + " 未绑定，落地时将跳过该表现过渡。", animationSet);
+    }
+
+    private static void WarnIfDirectionalPartiallyBound(PlayerAnimationSet animationSet, PlayerLocomotionMode mode, string label)
+    {
+        int count = animationSet.CountDirectionalClips(mode);
+        if (count == 0 || animationSet.TryResolveDirectionalLoop(mode, out _)) return;
+        Debug.LogWarning(animationSet.name + ": " + label + ".DirectionalLoop 已绑定 " + count + "/8 个方向，当前仍使用现有脚步 Loop。", animationSet);
     }
 
     private static bool ValidateProfile(PlayerMotionProfile profile, string label, ICollection<string> errors, ISet<PlayerMotionProfile> validatedProfiles)

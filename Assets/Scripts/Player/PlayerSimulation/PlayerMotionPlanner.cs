@@ -15,6 +15,7 @@ public class PlayerMotionPlanner : MonoBehaviour
 
     public PlayerMotionCatalog Catalog => catalog;
     public PlayerMotionSnapshot Snapshot => runtime.MotionSnapshot;
+    public PlayerDirectionalMovementSnapshot DirectionalMovement { get; private set; }
     public PlayerLocomotionPhaseSnapshot PhaseSnapshot
     {
         get
@@ -33,6 +34,22 @@ public class PlayerMotionPlanner : MonoBehaviour
     }
 
     public void BeginFrame() => runtime.BeginFrame();
+
+    /// <summary>用同帧有效移动与目标朝向建立方向表现事实</summary>
+    public void ResolveDirectionalMovement(PlayerGameplayIntent intent)
+    {
+        DirectionalMovement = default;
+        if (facingMode != PlayerFacingMode.Independent || !PlayerLocomotionDefinition.IsGroundLoopMode(intent.LocomotionMode)) return;
+        Vector3 move = Vector3.ProjectOnPlane(intent.DesiredMoveDirection, Vector3.up);
+        Vector3 forward = Vector3.ProjectOnPlane(intent.DesiredFacingDirection, Vector3.up);
+        float magnitude = Mathf.Clamp01(move.magnitude);
+        if (magnitude < 0.0001f || forward.sqrMagnitude < 0.0001f) return;
+        forward.Normalize();
+        Vector3 right = Vector3.Cross(Vector3.up, forward);
+        Vector3 direction = move / magnitude;
+        //解析了八向移动时的角度
+        DirectionalMovement = new PlayerDirectionalMovementSnapshot(intent.LocomotionMode, new Vector2(Vector3.Dot(direction, right), Vector3.Dot(direction, forward)).normalized, magnitude);
+    }
 
     /// <summary>
     /// 在写入本帧 Motion facts 前清理进入 Independent 后不再使用的地面 Motion
