@@ -1,7 +1,7 @@
 # Architecture
 
 > 本文记录项目当前较稳定的职责边界、依赖方向和核心运行流  
-> 最后核对的运行时代码基线：当前工作树（2026-09-28，包含 Source Exit Handoff、Loop Definition 资产化与独立朝向八方向 Mixer 槽位）
+> 最后核对的运行时代码基线：当前工作树（2026-09-29，包含 Source Exit Handoff、Loop Definition 资产化与 Walk / Run 八方向 Mixer 槽位）
 
 ## 1. 当前架构概览
 
@@ -456,7 +456,7 @@ PlayerLocomotionPhaseSnapshot
 
 - `PlayerMotionDefinition + selected PlayerMotionProfile → Motion ClipTransition`
 - `PlayerLocomotionMode + PlayerFoot → Loop ClipTransition`
-- Independent Walk / Run / FastRun 的八方向 → Directional `MixerTransition2D`；三个步态各有八个 Clip 空槽，只有该步态八个有效 Clip 与方向阈值齐备时才启用，否则使用原脚步 Loop
+- Independent Walk / Run 的八方向 → Directional `MixerTransition2D`；默认 AnimationSet 的两个步态各绑定 `FemaleMovementAnimsetPro_1.fbx` 中八个方向 Loop Clip，八个有效 Clip 与方向阈值齐备时启用，否则使用原脚步 Loop。FastRun 保留原脚步 Loop 和 Motion Binding，不包含方向 Mixer 槽位
 - Jump / Dodge Presentation Cue 与 Landing Key → ClipTransition
 - 校验 Catalog、Definition、Profile 与 Animation Binding 的一致性
 

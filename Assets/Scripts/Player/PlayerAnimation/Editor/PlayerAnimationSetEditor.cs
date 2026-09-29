@@ -44,7 +44,6 @@ public class PlayerAnimationSetEditor : Editor
         WarnIfCueUnbound(animationSet, PlayerAnimationCue.HardLanding, "Landing.Land4");
         WarnIfDirectionalPartiallyBound(animationSet, PlayerLocomotionMode.Walk, "Walk");
         WarnIfDirectionalPartiallyBound(animationSet, PlayerLocomotionMode.Run, "Run");
-        WarnIfDirectionalPartiallyBound(animationSet, PlayerLocomotionMode.FastRun, "Sprint");
         if (valid) Debug.Log(animationSet.name + ": Motion bindings and baked sources valid.", animationSet);
         else Debug.LogError(string.Join("\n", errors), animationSet);
     }

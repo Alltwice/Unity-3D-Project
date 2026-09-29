@@ -2,7 +2,9 @@ using System;
 using UnityEngine;
 
 public enum PlayerMotionNodeKind { Locomotion, Motion }
-
+/// <summary>
+/// handoff节点语义表示/motion or loop
+/// </summary>
 [Serializable]
 public struct PlayerMotionNodeKey : IEquatable<PlayerMotionNodeKey>
 {

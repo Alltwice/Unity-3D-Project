@@ -171,7 +171,7 @@ public sealed class PlayerAnimationController : MonoBehaviour
         presentation.Current.Destroy();
         presentation.Previous?.Destroy();
     }   
-    ///<summary>用于处理地面八向移动动画解析</summary>
+    ///<summary>用于处理地面八向移动动画解析并返回动画</summary>
     private bool TryResolveGroundTransition(PlayerHandoffNodeSnapshot node, PlayerLocomotionPhaseSnapshot phase, PlayerDirectionalMovementSnapshot direction, out ITransition transition, out bool directional)
     {
         directional = false;
@@ -182,6 +182,7 @@ public sealed class PlayerAnimationController : MonoBehaviour
             transition = motionTransition;
             return found;
         }
+        //获取到序列化好的mixer
         if (direction.IsActive && direction.Mode == node.Key.Locomotion && animationSet.TryResolveDirectionalLoop(node.Key.Locomotion, out MixerTransition2D mixer))
         {
             transition = mixer;

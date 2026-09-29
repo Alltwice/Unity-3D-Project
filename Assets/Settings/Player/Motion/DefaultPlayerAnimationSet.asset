@@ -52,37 +52,6 @@ MonoBehaviour:
           _Names: []
         _Clip: {fileID: 1827226128182048838, guid: 28f94a65124f3284b8882da5e12ea584, type: 3}
         _NormalizedStartTime: NaN
-    directionalLoop:
-      _FadeDuration: 0.12
-      _Speed: 1
-      _Events:
-        _NormalizedTimes: []
-        _Callbacks: []
-        _Names: []
-      _Animations:
-      - {fileID: 0}
-      - {fileID: 0}
-      - {fileID: 0}
-      - {fileID: 0}
-      - {fileID: 0}
-      - {fileID: 0}
-      - {fileID: 0}
-      - {fileID: 0}
-      _Speeds: []
-      _SynchronizeChildren: []
-      _Thresholds:
-      - {x: 0, y: 1}
-      - {x: 0.70710678, y: 0.70710678}
-      - {x: 1, y: 0}
-      - {x: 0.70710678, y: -0.70710678}
-      - {x: 0, y: -1}
-      - {x: -0.70710678, y: -0.70710678}
-      - {x: -1, y: 0}
-      - {x: -0.70710678, y: 0.70710678}
-      _DefaultParameter: {x: 0, y: 1}
-      _Type: 1
-      _ParameterNameX: {fileID: 0}
-      _ParameterNameY: {fileID: 0}
     motionBindings:
     - definition: {fileID: 11400000, guid: e0aad969cd095344ab0d8497f8121581, type: 2}
       defaultTransition:
@@ -252,6 +221,37 @@ MonoBehaviour:
           _Names: []
         _Clip: {fileID: 1827226128182048838, guid: 59a157d52a2046d4e992b48b6d969a8d, type: 3}
         _NormalizedStartTime: NaN
+    directionalLoop:
+      _FadeDuration: 0.12
+      _Speed: 1
+      _Events:
+        _NormalizedTimes: []
+        _Callbacks: []
+        _Names: []
+      _Animations:
+      - {fileID: 7400016, guid: e5366f5926c8dd949a168f5f0095a4d3, type: 3}
+      - {fileID: 7400026, guid: e5366f5926c8dd949a168f5f0095a4d3, type: 3}
+      - {fileID: 7400020, guid: e5366f5926c8dd949a168f5f0095a4d3, type: 3}
+      - {fileID: 7400086, guid: e5366f5926c8dd949a168f5f0095a4d3, type: 3}
+      - {fileID: 7400018, guid: e5366f5926c8dd949a168f5f0095a4d3, type: 3}
+      - {fileID: 7400024, guid: e5366f5926c8dd949a168f5f0095a4d3, type: 3}
+      - {fileID: 7400022, guid: e5366f5926c8dd949a168f5f0095a4d3, type: 3}
+      - {fileID: 7400084, guid: e5366f5926c8dd949a168f5f0095a4d3, type: 3}
+      _Speeds: []
+      _SynchronizeChildren: []
+      _Thresholds:
+      - {x: 0, y: 1}
+      - {x: 0.70710677, y: 0.70710677}
+      - {x: 1, y: 0}
+      - {x: 0.70710677, y: -0.70710677}
+      - {x: 0, y: -1}
+      - {x: -0.70710677, y: -0.70710677}
+      - {x: -1, y: 0}
+      - {x: -0.70710677, y: 0.70710677}
+      _DefaultParameter: {x: 0, y: 1}
+      _Type: 1
+      _ParameterNameX: {fileID: 0}
+      _ParameterNameY: {fileID: 0}
   run:
     loop:
       defaultTransition:
@@ -281,37 +281,6 @@ MonoBehaviour:
           _Names: []
         _Clip: {fileID: 1827226128182048838, guid: 99e4eb5572885a74b8602df50dac4516, type: 3}
         _NormalizedStartTime: NaN
-    directionalLoop:
-      _FadeDuration: 0.12
-      _Speed: 1
-      _Events:
-        _NormalizedTimes: []
-        _Callbacks: []
-        _Names: []
-      _Animations:
-      - {fileID: 0}
-      - {fileID: 0}
-      - {fileID: 0}
-      - {fileID: 0}
-      - {fileID: 0}
-      - {fileID: 0}
-      - {fileID: 0}
-      - {fileID: 0}
-      _Speeds: []
-      _SynchronizeChildren: []
-      _Thresholds:
-      - {x: 0, y: 1}
-      - {x: 0.70710678, y: 0.70710678}
-      - {x: 1, y: 0}
-      - {x: 0.70710678, y: -0.70710678}
-      - {x: 0, y: -1}
-      - {x: -0.70710678, y: -0.70710678}
-      - {x: -1, y: 0}
-      - {x: -0.70710678, y: 0.70710678}
-      _DefaultParameter: {x: 0, y: 1}
-      _Type: 1
-      _ParameterNameX: {fileID: 0}
-      _ParameterNameY: {fileID: 0}
     motionBindings:
     - definition: {fileID: 11400000, guid: 4437c1a77929315498589ebf3cad360d, type: 2}
       defaultTransition:
@@ -481,6 +450,37 @@ MonoBehaviour:
           _Names: []
         _Clip: {fileID: 8242617978284009519, guid: a1969baaa6134ad4f972ef6d57c356cc, type: 3}
         _NormalizedStartTime: NaN
+    directionalLoop:
+      _FadeDuration: 0.12
+      _Speed: 1
+      _Events:
+        _NormalizedTimes: []
+        _Callbacks: []
+        _Names: []
+      _Animations:
+      - {fileID: 7400098, guid: e5366f5926c8dd949a168f5f0095a4d3, type: 3}
+      - {fileID: 7400106, guid: e5366f5926c8dd949a168f5f0095a4d3, type: 3}
+      - {fileID: 7400102, guid: e5366f5926c8dd949a168f5f0095a4d3, type: 3}
+      - {fileID: 7400112, guid: e5366f5926c8dd949a168f5f0095a4d3, type: 3}
+      - {fileID: 7400100, guid: e5366f5926c8dd949a168f5f0095a4d3, type: 3}
+      - {fileID: 7400110, guid: e5366f5926c8dd949a168f5f0095a4d3, type: 3}
+      - {fileID: 7400104, guid: e5366f5926c8dd949a168f5f0095a4d3, type: 3}
+      - {fileID: 7400108, guid: e5366f5926c8dd949a168f5f0095a4d3, type: 3}
+      _Speeds: []
+      _SynchronizeChildren: []
+      _Thresholds:
+      - {x: 0, y: 1}
+      - {x: 0.70710677, y: 0.70710677}
+      - {x: 1, y: 0}
+      - {x: 0.70710677, y: -0.70710677}
+      - {x: 0, y: -1}
+      - {x: -0.70710677, y: -0.70710677}
+      - {x: -1, y: 0}
+      - {x: -0.70710677, y: 0.70710677}
+      _DefaultParameter: {x: 0, y: 1}
+      _Type: 1
+      _ParameterNameX: {fileID: 0}
+      _ParameterNameY: {fileID: 0}
   sprint:
     loop:
       defaultTransition:
@@ -510,37 +510,6 @@ MonoBehaviour:
           _Names: []
         _Clip: {fileID: 1827226128182048838, guid: 3e2e69d8336b4a944969c564b91de69e, type: 3}
         _NormalizedStartTime: NaN
-    directionalLoop:
-      _FadeDuration: 0.12
-      _Speed: 1
-      _Events:
-        _NormalizedTimes: []
-        _Callbacks: []
-        _Names: []
-      _Animations:
-      - {fileID: 0}
-      - {fileID: 0}
-      - {fileID: 0}
-      - {fileID: 0}
-      - {fileID: 0}
-      - {fileID: 0}
-      - {fileID: 0}
-      - {fileID: 0}
-      _Speeds: []
-      _SynchronizeChildren: []
-      _Thresholds:
-      - {x: 0, y: 1}
-      - {x: 0.70710678, y: 0.70710678}
-      - {x: 1, y: 0}
-      - {x: 0.70710678, y: -0.70710678}
-      - {x: 0, y: -1}
-      - {x: -0.70710678, y: -0.70710678}
-      - {x: -1, y: 0}
-      - {x: -0.70710678, y: 0.70710678}
-      _DefaultParameter: {x: 0, y: 1}
-      _Type: 1
-      _ParameterNameX: {fileID: 0}
-      _ParameterNameY: {fileID: 0}
     motionBindings:
     - definition: {fileID: 11400000, guid: 1b657801f384c0e46bc9e358d99f73e1, type: 2}
       defaultTransition:

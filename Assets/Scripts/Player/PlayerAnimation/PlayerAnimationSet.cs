@@ -109,12 +109,19 @@ public class PlayerIdleAnimationGroup
 public class PlayerLocomotionAnimationGroup
 {
     [SerializeField] private PlayerLoopAnimationPair loop = new PlayerLoopAnimationPair();
-    [SerializeField] private MixerTransition2D directionalLoop = new MixerTransition2D();
     [SerializeField] private List<PlayerMotionAnimationBinding> motionBindings = new List<PlayerMotionAnimationBinding>();
 
     public PlayerLoopAnimationPair Loop => loop;
-    public MixerTransition2D DirectionalLoop => directionalLoop;
     public List<PlayerMotionAnimationBinding> MotionBindings => motionBindings;
+}
+
+/// <summary>Walk 与 Run 的八方向循环表现资源</summary>
+[Serializable]
+public class PlayerDirectionalLocomotionAnimationGroup : PlayerLocomotionAnimationGroup
+{
+    [SerializeField] private MixerTransition2D directionalLoop = new MixerTransition2D();
+
+    public MixerTransition2D DirectionalLoop => directionalLoop;
 }
 
 /// <summary>
@@ -269,8 +276,8 @@ public class PlayerAnimationSet : ScriptableObject
 {
     [SerializeField] private PlayerMotionCatalog motionCatalog;
     [SerializeField] private PlayerIdleAnimationGroup idle = new PlayerIdleAnimationGroup();
-    [SerializeField] private PlayerLocomotionAnimationGroup walk = new PlayerLocomotionAnimationGroup();
-    [SerializeField] private PlayerLocomotionAnimationGroup run = new PlayerLocomotionAnimationGroup();
+    [SerializeField] private PlayerDirectionalLocomotionAnimationGroup walk = new PlayerDirectionalLocomotionAnimationGroup();
+    [SerializeField] private PlayerDirectionalLocomotionAnimationGroup run = new PlayerDirectionalLocomotionAnimationGroup();
     [SerializeField] private PlayerLocomotionAnimationGroup sprint = new PlayerLocomotionAnimationGroup();
     [SerializeField] private PlayerJumpAnimationGroup jump = new PlayerJumpAnimationGroup();
     [SerializeField] private PlayerLandingAnimationGroup landing = new PlayerLandingAnimationGroup();
@@ -328,7 +335,8 @@ public class PlayerAnimationSet : ScriptableObject
     /// <summary>八个方向都绑定有效 Clip 后才启用独立朝向 Mixer</summary>
     public bool TryResolveDirectionalLoop(PlayerLocomotionMode mode, out MixerTransition2D transition)
     {
-        PlayerLocomotionAnimationGroup group = mode == PlayerLocomotionMode.Walk ? walk : mode == PlayerLocomotionMode.Run ? run : mode == PlayerLocomotionMode.FastRun ? sprint : null;
+        PlayerDirectionalLocomotionAnimationGroup group = mode == PlayerLocomotionMode.Walk ? walk : mode == PlayerLocomotionMode.Run ? run : null;
+        //判断时walk还是run在这里拿到信息
         transition = group?.DirectionalLoop;
         if (transition == null || transition.Type != MixerTransition2D.MixerType.Directional) return false;
         UnityEngine.Object[] animations = transition.Animations;
@@ -343,7 +351,7 @@ public class PlayerAnimationSet : ScriptableObject
     /// <summary>只用来统计槽位数量</summary>
     public int CountDirectionalClips(PlayerLocomotionMode mode)
     {
-        PlayerLocomotionAnimationGroup group = mode == PlayerLocomotionMode.Walk ? walk : mode == PlayerLocomotionMode.Run ? run : mode == PlayerLocomotionMode.FastRun ? sprint : null;
+        PlayerDirectionalLocomotionAnimationGroup group = mode == PlayerLocomotionMode.Walk ? walk : mode == PlayerLocomotionMode.Run ? run : null;
         MixerTransition2D transition = group?.DirectionalLoop;
         UnityEngine.Object[] animations = transition == null ? null : transition.Animations;
         if (animations == null) return 0;
@@ -594,11 +602,10 @@ public class PlayerAnimationSet : ScriptableObject
 
     public void ConfigureLoop(PlayerLocomotionMode locomotionMode, PlayerFoot foot, AnimationClip clip, float fadeDuration)
     {
-        PlayerLocomotionAnimationGroup group = locomotionMode == PlayerLocomotionMode.Walk ? walk : locomotionMode == PlayerLocomotionMode.Run ? run : sprint;
-        group ??= new PlayerLocomotionAnimationGroup();
-        if (locomotionMode == PlayerLocomotionMode.Walk) walk = group;
-        else if (locomotionMode == PlayerLocomotionMode.Run) run = group;
-        else sprint = group;
+        PlayerLocomotionAnimationGroup group;
+        if (locomotionMode == PlayerLocomotionMode.Walk) group = walk ??= new PlayerDirectionalLocomotionAnimationGroup();
+        else if (locomotionMode == PlayerLocomotionMode.Run) group = run ??= new PlayerDirectionalLocomotionAnimationGroup();
+        else group = sprint ??= new PlayerLocomotionAnimationGroup();
         group.Loop.Configure(foot, clip, fadeDuration);
     }
 
