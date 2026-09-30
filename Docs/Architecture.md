@@ -473,7 +473,7 @@ PlayerLocomotionPhaseSnapshot
 - **Dodge / HardLanding**：按对应 Gameplay State 的 PresentationProgress 手动采样
 - **Jump / 普通 Landing Edge**：由 Animancer 推进，结束事件切回目标 Loop
 
-Controller 按 Handoff 节点实例创建独立顶层 Clip State 或 Directional Mixer State，即使资源相同也不共用采样时间。Mixer 参数来自方向快照，子动画沿用节点脚步相位的手动采样；零方向不送入 Mixer。每帧从快照读取两端姿态权重并施加于顶层 State；同一 Loop 的方向变化仅更新 Mixer 参数，不请求 Handoff。切换朝向模式导致节点内 Clip / Mixer 变化时，动画层以当前相位做短时姿态淡入。旧目标被替换或源淡出完成后销毁对应 State。Controller 不推进地面混合时钟。
+Controller 按 Handoff 节点实例创建独立顶层 Clip State 或 Directional Mixer State，即使资源相同也不共用采样时间。Walk / Run 的方向 Mixer 在各自 `GroundPresentation` 中保存当前参数角度、最新目标角度和子权重 Fade 状态：小于 120° 的目标差沿最短角度差平滑更新单位圆参数，达到 120° 时先保存当前子权重，再计算并保存目标子权重，恢复当前权重后逐个启动 Animancer Fade，在 0.12 秒内直接淡入目标方向；淡入期间目标变化达到 10° 时从当前子权重重新淡入，较小变化在淡入结束后由角度平滑追上。新建 Mixer 直接设为当前目标方向，不重复叠加子权重 Fade。Mixer 子动画沿用节点脚步相位手动采样；为使子权重 Fade 随手动 Graph Evaluate 前进，方向 Mixer 保持 `Speed = 1`、`IsPlaying = false`，其他状态仍以零速度手动采样。零方向不送入 Mixer。每帧从快照读取 Handoff 两端姿态权重并施加于顶层 State；同一 Loop 的方向变化不请求 Handoff。Clip / Mixer 切换仍由顶层 State 按 0.12 秒做姿态淡入。Handoff 源节点复用已有表现，保留其 Mixer / Clip 选择、方向与进行中的方向 Fade；目标节点仍根据当前方向快照选片。旧目标被替换或源淡出完成后销毁对应 State。Controller 不推进地面混合时钟。
 
 A→B 混合中请求 C 时，Runtime 保留 A 的采样进度及当前姿态/平移权重，立即释放 B，按来源 A 的退出配置重新计时。源权重为捕获权重乘 `1-Curve(u)`，目标补足到 1；旧目标的姿态与速度贡献被立即替换。请求回到来源时交换两端，复用来源实例恢复权重。
 

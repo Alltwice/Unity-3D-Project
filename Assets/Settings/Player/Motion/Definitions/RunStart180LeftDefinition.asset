@@ -27,7 +27,7 @@ MonoBehaviour:
   interruptedExitPolicy: 0
   requiresPresentation: 1
   exitHandoff:
-    duration: 0.34000002
+    duration: 0.34000003
     curve:
       serializedVersion: 2
       m_Curve:

@@ -222,7 +222,7 @@ MonoBehaviour:
         _Clip: {fileID: 1827226128182048838, guid: 59a157d52a2046d4e992b48b6d969a8d, type: 3}
         _NormalizedStartTime: NaN
     directionalLoop:
-      _FadeDuration: 0.12
+      _FadeDuration: 0.36
       _Speed: 1
       _Events:
         _NormalizedTimes: []
@@ -238,7 +238,7 @@ MonoBehaviour:
       - {fileID: 7400022, guid: e5366f5926c8dd949a168f5f0095a4d3, type: 3}
       - {fileID: 7400084, guid: e5366f5926c8dd949a168f5f0095a4d3, type: 3}
       _Speeds: []
-      _SynchronizeChildren: []
+      _SynchronizeChildren: 
       _Thresholds:
       - {x: 0, y: 1}
       - {x: 0.70710677, y: 0.70710677}
@@ -451,7 +451,7 @@ MonoBehaviour:
         _Clip: {fileID: 8242617978284009519, guid: a1969baaa6134ad4f972ef6d57c356cc, type: 3}
         _NormalizedStartTime: NaN
     directionalLoop:
-      _FadeDuration: 0.12
+      _FadeDuration: 0.25000003
       _Speed: 1
       _Events:
         _NormalizedTimes: []
@@ -467,7 +467,7 @@ MonoBehaviour:
       - {fileID: 7400104, guid: e5366f5926c8dd949a168f5f0095a4d3, type: 3}
       - {fileID: 7400108, guid: e5366f5926c8dd949a168f5f0095a4d3, type: 3}
       _Speeds: []
-      _SynchronizeChildren: []
+      _SynchronizeChildren: 
       _Thresholds:
       - {x: 0, y: 1}
       - {x: 0.70710677, y: 0.70710677}

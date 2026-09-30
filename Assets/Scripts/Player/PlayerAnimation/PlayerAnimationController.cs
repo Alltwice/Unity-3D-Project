@@ -36,12 +36,24 @@ public sealed class PlayerAnimationController : MonoBehaviour
     }
 
     private const float GroundStateSwitchDuration = 0.12f;
+    private const float DirectionalChildFadeDuration = 0.12f;
+    private const float DirectionalLargeTurnAngle = 120f;
+    private const float DirectionalRetargetAngle = 10f;
+    private const float DirectionalSnapAngle = 0.5f;
+    private const float DirectionalResponseTime = 0.08f;
+    private const float DirectionalMaxTurnSpeed = 900f;
     private class GroundPresentation
     {
         public AnimancerState Current;
         public AnimancerState Previous;
         public bool IsDirectional;
         public float SwitchElapsed = GroundStateSwitchDuration;
+        public float CurrentDirectionAngle;
+        public float TargetDirectionAngle;
+        public float ChildFadeTargetAngle;
+        public float ChildFadeElapsed;
+        public bool HasDirectionAngle;
+        public bool IsChildWeightFading;
     }
 
     private readonly System.Collections.Generic.Dictionary<ulong, GroundPresentation> groundStates = new System.Collections.Generic.Dictionary<ulong, GroundPresentation>();
@@ -77,8 +89,8 @@ public sealed class PlayerAnimationController : MonoBehaviour
         foreach (var pair in groundStates)
             if (pair.Key != handoff.Target.InstanceId && (!handoff.IsActive || pair.Key != handoff.Source.InstanceId)) releasedStates.Add(pair.Key);
         foreach (ulong id in releasedStates) { DestroyGroundPresentation(groundStates[id]); groundStates.Remove(id); }
-        GroundPresentation target = ResolveGroundState(handoff.Target, phase, direction, deltaTime, out ITransition targetTransition);
-        GroundPresentation source = handoff.IsActive ? ResolveGroundState(handoff.Source, phase, direction, deltaTime, out _) : null;
+        GroundPresentation target = ResolveGroundState(handoff.Target, phase, direction, deltaTime, false, out ITransition targetTransition);
+        GroundPresentation source = handoff.IsActive ? ResolveGroundState(handoff.Source, phase, direction, deltaTime, true, out _) : null;
         boundaryState = handoff.Target.Key.IsMotion ? target.Current : null;
         DebugBoundaryPhase = handoff.Target.Motion.Progress;
         if (transition.HasValue && IsDodgeExitEntry(transition.Value, handoff.Target) && dodgeState != null && dodgeExitFadeTargetState == null)
@@ -102,11 +114,18 @@ public sealed class PlayerAnimationController : MonoBehaviour
         ApplyGroundWeight(target, 1f - handoff.SourcePoseWeight);
     }
 
-    private GroundPresentation ResolveGroundState(PlayerHandoffNodeSnapshot node, PlayerLocomotionPhaseSnapshot phase, PlayerDirectionalMovementSnapshot direction, float deltaTime, out ITransition transition)
+    private GroundPresentation ResolveGroundState(PlayerHandoffNodeSnapshot node, PlayerLocomotionPhaseSnapshot phase, PlayerDirectionalMovementSnapshot direction, float deltaTime, bool isHandoffSource, out ITransition transition)
     {
         if (node.Phase.HasLoop) phase = node.Phase;
-        if (!TryResolveGroundTransition(node, phase, direction, out transition, out bool directional)) throw new InvalidOperationException("Missing ground animation: " + node.Key);
-        if (!groundStates.TryGetValue(node.InstanceId, out GroundPresentation presentation))
+        bool hasPresentation = groundStates.TryGetValue(node.InstanceId, out GroundPresentation presentation);
+        bool directional;
+        if (isHandoffSource && hasPresentation)
+        {
+            transition = null;
+            directional = presentation.IsDirectional;
+        }
+        else if (!TryResolveGroundTransition(node, phase, direction, isHandoffSource, out transition, out directional)) throw new InvalidOperationException("Missing ground animation: " + node.Key);
+        if (!hasPresentation)
         {
             presentation = new GroundPresentation { Current = CreateGroundState(transition), IsDirectional = directional };
             groundStates.Add(node.InstanceId, presentation);
@@ -119,8 +138,11 @@ public sealed class PlayerAnimationController : MonoBehaviour
             presentation.Current = CreateGroundState(transition);
             presentation.IsDirectional = directional;
             presentation.SwitchElapsed = 0f;
+            presentation.HasDirectionAngle = false;
+            presentation.IsChildWeightFading = false;
+            presentation.ChildFadeElapsed = 0f;
         }
-        if (directional) ((DirectionalMixerState)presentation.Current).Parameter = direction.LocalDirection;
+        if (directional) UpdateDirectionalState(presentation, (DirectionalMixerState)presentation.Current, direction.LocalDirection, deltaTime, !isHandoffSource);
         float normalizedTime = node.Key.IsMotion ? node.Motion.Progress : phase.HasLoop && phase.Mode == node.Key.Locomotion ? phase.NormalizedTime : 0f;
         SampleGroundState(presentation.Current, node, phase, normalizedTime);
         if (presentation.Previous != null)
@@ -148,10 +170,91 @@ public sealed class PlayerAnimationController : MonoBehaviour
 
     private static void SampleGroundState(AnimancerState state, PlayerHandoffNodeSnapshot node, PlayerLocomotionPhaseSnapshot phase, float normalizedTime)
     {
-        state.Speed = 0f;
+        state.Speed = state is DirectionalMixerState ? 1f : 0f;
         state.IsPlaying = false;
         if (node.Key.IsMotion || phase.HasLoop && phase.Mode == node.Key.Locomotion) state.NormalizedTime = normalizedTime;
         else state.Time = node.ElapsedTime;
+    }
+
+    /// <summary>小转向平滑更新单位圆参数，大转向直接淡入目标子权重</summary>
+    private static void UpdateDirectionalState(GroundPresentation presentation, DirectionalMixerState mixer, Vector2 targetDirection, float deltaTime, bool followTarget)
+    {
+        if (!presentation.HasDirectionAngle)
+        {
+            float initialAngle = DirectionAngle(targetDirection);
+            presentation.CurrentDirectionAngle = initialAngle;
+            presentation.TargetDirectionAngle = initialAngle;
+            presentation.ChildFadeTargetAngle = initialAngle;
+            presentation.HasDirectionAngle = true;
+            mixer.Parameter = DirectionVector(initialAngle);
+        }
+        else if (followTarget)
+        {
+            presentation.TargetDirectionAngle = DirectionAngle(targetDirection);
+            float targetDelta = Mathf.DeltaAngle(presentation.CurrentDirectionAngle, presentation.TargetDirectionAngle);
+            if (presentation.IsChildWeightFading)
+            {
+                float retargetDelta = Mathf.DeltaAngle(presentation.ChildFadeTargetAngle, presentation.TargetDirectionAngle);
+                if (Mathf.Abs(retargetDelta) >= DirectionalRetargetAngle) StartDirectionalChildFade(presentation, mixer, presentation.TargetDirectionAngle);
+            }
+            else if (Mathf.Abs(targetDelta) >= DirectionalLargeTurnAngle)
+            {
+                StartDirectionalChildFade(presentation, mixer, presentation.TargetDirectionAngle);
+            }
+            else
+            {
+                float deltaTimeClamped = Mathf.Max(0f, deltaTime);
+                if (Mathf.Abs(targetDelta) < DirectionalSnapAngle) presentation.CurrentDirectionAngle = presentation.TargetDirectionAngle;
+                else
+                {
+                    float step = targetDelta * (1f - Mathf.Exp(-deltaTimeClamped / DirectionalResponseTime));
+                    float maxStep = DirectionalMaxTurnSpeed * deltaTimeClamped;
+                    if (Mathf.Abs(step) > maxStep) step = Mathf.Sign(step) * maxStep;
+                    presentation.CurrentDirectionAngle = Mathf.Repeat(presentation.CurrentDirectionAngle + step, 360f);
+                }
+                mixer.Parameter = DirectionVector(presentation.CurrentDirectionAngle);
+            }
+        }
+        if (presentation.IsChildWeightFading)
+        {
+            presentation.ChildFadeElapsed += Mathf.Max(0f, deltaTime);
+            if (presentation.ChildFadeElapsed >= DirectionalChildFadeDuration) presentation.IsChildWeightFading = false;
+        }
+    }
+
+    private static void StartDirectionalChildFade(GroundPresentation presentation, DirectionalMixerState mixer, float targetAngle)
+    {
+        FadeDirectionalChildWeights(mixer, DirectionVector(targetAngle));
+        presentation.CurrentDirectionAngle = targetAngle;
+        presentation.ChildFadeTargetAngle = targetAngle;
+        presentation.ChildFadeElapsed = 0f;
+        presentation.IsChildWeightFading = true;
+    }
+
+    private static void FadeDirectionalChildWeights(DirectionalMixerState mixer, Vector2 targetDirection)
+    {
+        int childCount = mixer.ChildCount;
+        float[] currentWeights = new float[childCount];
+        for (int i = 0; i < childCount; i++) currentWeights[i] = mixer.GetChild(i).Weight;
+        mixer.Parameter = targetDirection;
+        mixer.RecalculateWeights();
+        for (int i = 0; i < childCount; i++)
+        {
+            AnimancerState child = mixer.GetChild(i);
+            // 未处于 Fade 时 TargetWeight 等于当前 Weight，恢复旧权重前先保存目标
+            float targetWeight = child.Weight;
+            child.Weight = currentWeights[i];
+            child.StartFade(Mathf.Max(targetWeight, float.Epsilon), DirectionalChildFadeDuration);
+        }
+    }
+    //Mathf.Atan2计算二维方向向量相对于+x轴的有向角度
+    private static float DirectionAngle(Vector2 direction) => Mathf.Atan2(direction.x, direction.y) * Mathf.Rad2Deg;
+
+    private static Vector2 DirectionVector(float angle)
+    {
+        //Mathf.Deg2Rad(角度转弧度，用于传入参数)
+        float radians = angle * Mathf.Deg2Rad;
+        return new Vector2(Mathf.Sin(radians), Mathf.Cos(radians));
     }
 
     private static bool ContainsGroundState(GroundPresentation presentation, AnimancerState state)
@@ -171,8 +274,8 @@ public sealed class PlayerAnimationController : MonoBehaviour
         presentation.Current.Destroy();
         presentation.Previous?.Destroy();
     }   
-    ///<summary>用于处理地面八向移动动画解析并返回动画</summary>
-    private bool TryResolveGroundTransition(PlayerHandoffNodeSnapshot node, PlayerLocomotionPhaseSnapshot phase, PlayerDirectionalMovementSnapshot direction, out ITransition transition, out bool directional)
+    /// <summary>按目标方向解析地面动画，或为尚无来源表现的 Handoff 源恢复其八向 Mixer</summary>
+    private bool TryResolveGroundTransition(PlayerHandoffNodeSnapshot node, PlayerLocomotionPhaseSnapshot phase, PlayerDirectionalMovementSnapshot direction, bool allowDirectionalSource, out ITransition transition, out bool directional)
     {
         directional = false;
         if (node.Phase.HasLoop) phase = node.Phase;
@@ -183,7 +286,7 @@ public sealed class PlayerAnimationController : MonoBehaviour
             return found;
         }
         //获取到序列化好的mixer
-        if (direction.IsActive && direction.Mode == node.Key.Locomotion && animationSet.TryResolveDirectionalLoop(node.Key.Locomotion, out MixerTransition2D mixer))
+        if (direction.IsActive && (direction.Mode == node.Key.Locomotion || allowDirectionalSource) && animationSet.TryResolveDirectionalLoop(node.Key.Locomotion, out MixerTransition2D mixer))
         {
             transition = mixer;
             directional = true;
